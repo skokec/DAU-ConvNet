@@ -1,0 +1,53 @@
+# Config file for the DAU-ConvNet package.
+#
+# Note:
+#   DAU-ConvNetand this config file depends on opencv,
+#   so put `find_package(OpenCV)` before searching DAU-ConvNet
+#   via `find_package(DAUConvNet)`. All other lib/includes
+#   dependencies are hard coded in the file
+#
+# After successful configuration the following variables
+# will be defined:
+#
+#   DAUConvNet_LIBRARIES    - IMPORTED targets to link against
+#                        (There is no DAUConvNet_INCLUDE_DIRS and DAUConvNet_DEFINITIONS
+#                         because they are specified in the IMPORTED target interface.)
+#
+#   DAUConvNet_HAVE_CUDA    - signals about CUDA support
+
+
+# OpenCV dependency (optional)
+
+if(@USE_OPENCV@)
+  if(NOT OpenCV_FOUND)
+    set(DAUConvNet_OpenCV_CONFIG_PATH "@OpenCV_CONFIG_PATH@")
+    if(DAUConvNet_OpenCV_CONFIG_PATH)
+      get_filename_component(DAUConvNet_OpenCV_CONFIG_PATH ${DAUConvNet_OpenCV_CONFIG_PATH} ABSOLUTE)
+
+      if(EXISTS ${DAUConvNet_OpenCV_CONFIG_PATH} AND NOT TARGET opencv_core)
+        message(STATUS "DAUConvNet: using OpenCV config from ${DAUConvNet_OpenCV_CONFIG_PATH}")
+	include(${DAUConvNet_OpenCV_CONFIG_PATH}/OpenCVConfig.cmake)
+      endif()
+
+    else()
+      find_package(OpenCV REQUIRED)
+    endif()
+    unset(DAUConvNet_OpenCV_CONFIG_PATH)
+  endif()
+endif()
+
+# Compute paths
+get_filename_component(DAUConvNet_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+# Our library dependencies
+if(NOT TARGET DAUConvNet AND NOT DAUConvNet_BINARY_DIR)
+  include("${DAUConvNet_CMAKE_DIR}/DAUConvNetTargets.cmake")
+endif()
+
+# List of IMPORTED libs created by DAUConvNetTargets.cmake
+# These targets already specify all needed definitions and include pathes
+set(DAUConvNet_LIBRARIES dau-conv)
+
+# Cuda support variables
+set(DAUConvNet_CPU_ONLY @CPU_ONLY@)
+set(DAUConvNet_HAVE_CUDA @HAVE_CUDA@)

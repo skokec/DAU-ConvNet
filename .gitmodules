@@ -1,0 +1,3 @@
+[submodule "include/cub"]
+	path = include/cub
+	url = https://github.com/NVlabs/cub.git
