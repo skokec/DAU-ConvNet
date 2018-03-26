@@ -73,7 +73,7 @@ public:
         this->component_border_bound = gmm_component_border_bound;
     }
 
-    void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, cublasHandle_t cublas_handle);
+    virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, cublasHandle_t cublas_handle);
 
     virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
                          int kernel_h, int kernel_w) = 0;

@@ -732,7 +732,7 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
 template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                                            const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down ) {
-/*
+
     M_Assert(this->is_data_on_gpu() == false, "Backward_cpu requires data on CPU, but is_data_on_gpu() returned true !");
 // get buffers for all parameters that we learn
     const Dtype* filter_weights = this->param_w();
@@ -808,8 +808,8 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
 
             // rot(mu) = (kernel_w-1) - mu
             {
-                caffe_copy(param_size, filter_offsets_float_mu1, param_mu1_backprop);
-                caffe_copy(param_size, filter_offsets_float_mu2, param_mu2_backprop);
+                memcpy(param_mu1_backprop, filter_offsets_float_mu1, sizeof(Dtype) * param_size);
+                memcpy(param_mu2_backprop, filter_offsets_float_mu2, sizeof(Dtype) * param_size);
 
                 caffe_scal(param_size, (Dtype)-1, param_mu1_backprop);
                 caffe_scal(param_size, (Dtype)-1, param_mu2_backprop);
@@ -829,7 +829,7 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
 
         }
         // Gradient w.r.t. bias.
-        if (this->bias_term_ && this->param_propagate_down_[1]) {
+        if (this->bias_term_ && params_propagate_down[4]) {
 
             Dtype* bias_diff = this->param_bias_grad();
             for (int n = 0; n < this->batch_num_; ++n) {
@@ -838,7 +838,7 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
         }
 
         // Gradient w.r.t w,mu1,mu2 and sigma
-        if (this->param_propagate_down_[0]) {
+        if (params_propagate_down[0]) {
 
             // first pre-filter input data with appropriate derivative filters
             int size_batch_k = this->batch_num_ * this->conv_in_channels_ * this->width_ * this->height_;
@@ -859,7 +859,7 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                                           (Dtype)0., interm_data + n * this->width_ * this->height_ + k * size_batch_k);
                 }
             }
-            Blob<Dtype> top_error_expended;
+            Dtype* top_error_expended = NULL;
             Dtype* top_error_ex = (Dtype*)top_error;
 
             if (this->width_out_ != this->width_ && this->height_out_ != this->height_) {
@@ -871,22 +871,27 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                 border_x = border_x > 0 ? border_x : 0;
                 border_y = border_y > 0 ? border_y : 0;
 
-                top_error_expended.Reshape(top_shape[this->channel_axis_-1], top_shape[this->channel_axis_], top_shape[this->channel_axis_+1] + 2*border_y, top_shape[this->channel_axis_+2] + 2*border_x);
+                vector<int> new_shape = {top_shape[this->channel_axis_-1], top_shape[this->channel_axis_], top_shape[this->channel_axis_+1] + 2*border_y, top_shape[this->channel_axis_+2] + 2*border_x};
+                int new_count = std::accumulate(new_shape.begin(), new_shape.end(), 1, std::multiplies<int>());
+                top_error_expended = new Dtype[new_count];
+                //top_error_expended.Reshape(top_shape[this->channel_axis_-1], top_shape[this->channel_axis_], top_shape[this->channel_axis_+1] + 2*border_y, top_shape[this->channel_axis_+2] + 2*border_x);
 
-                top_error_ex = top_error_expended.mutable_cpu_data();
+                top_error_ex = top_error_expended;
 
-                memset(top_error_ex, 0, sizeof(Dtype) * top_error_expended.count());
+                memset(top_error_ex, 0, sizeof(Dtype) * new_count);
 
-                for (int n = 0; n < top_error_expended.num(); ++n) {
-                    for (int c = 0; c < top_error_expended.channels(); ++c) {
+                for (int n = 0; n < new_shape[0]; ++n) {
+                    for (int c = 0; c < new_shape[1]; ++c) {
                         for (int h = 0; h < top_shape[this->channel_axis_+1]; ++h) {
                             for (int w = 0; w < top_shape[this->channel_axis_+2]; ++w) {
-                                top_error_ex[top_error_expended.offset(n,c,border_y+h,border_x+w)] = top_error[OFFSET(n,c,h,w, top_shape[0], top_shape[1], top_shape[2], top_shape[3])];
+                                int in_offset = OFFSET(n,c,h,w, top_shape[0], top_shape[1], top_shape[2], top_shape[3]);
+                                int out_offset = OFFSET(n,c,border_y+h,border_x+w, new_shape[0], new_shape[1], new_shape[2], new_shape[3]);
+
+                                top_error_ex[out_offset] = top_error[in_offset];
                             }
                         }
                     }
                 }
-
             }
 
             // then collect gradients by shifting convolved bottom input data and multiplying it with the top error data
@@ -902,24 +907,26 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                                       this->width_, this->height_, this->kernel_w_, this->kernel_h_, this->ignore_edge_gradients_);
 
             }
+            if (top_error_expended != NULL)
+                delete[] top_error_expended;
+
         }
-
-
     }
 
     // we need accumulate gradients them to the final buffer and add weights to some derivates
-    if (this->param_propagate_down_[0]) {
+    if (params_propagate_down[0] || params_propagate_down[1] ||
+        params_propagate_down[2] || params_propagate_down[3]) {
         // multiply gradients with appropriate weights
         /// add add weight multiplyer as specifed by derivative formula only for mu1,mu2 and sigma
-        if (NUM_K > 1) caffe_mul(param_size, bwd_gradients_data + 1 * param_size, filter_weights, bwd_gradients_data + 1 * param_size); // mu1
-        if (NUM_K > 2) caffe_mul(param_size, bwd_gradients_data + 2 * param_size, filter_weights, bwd_gradients_data + 2 * param_size); // mu2
-        if (NUM_K > 3) caffe_mul(param_size, bwd_gradients_data + 3 * param_size, filter_weights, bwd_gradients_data + 3 * param_size); // sigma
+        if (NUM_K > 1 && params_propagate_down[1]) caffe_mul(param_size, bwd_gradients_data + 1 * param_size, filter_weights, bwd_gradients_data + 1 * param_size); // mu1
+        if (NUM_K > 2 && params_propagate_down[2]) caffe_mul(param_size, bwd_gradients_data + 2 * param_size, filter_weights, bwd_gradients_data + 2 * param_size); // mu2
+        if (NUM_K > 3 && params_propagate_down[3]) caffe_mul(param_size, bwd_gradients_data + 3 * param_size, filter_weights, bwd_gradients_data + 3 * param_size); // sigma
 
         // for weight gradient we only accumulate to final buffer
-        if (NUM_K > 0) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 0 * param_size, param_weights_diff); // w
-        if (NUM_K > 1) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 1 * param_size, param_mu1_diff); // mu1
-        if (NUM_K > 2) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 2 * param_size, param_mu2_diff); // mu2
-        if (NUM_K > 3) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 3 * param_size, param_sigma_diff); // sigma
+        if (NUM_K > 0 && params_propagate_down[0]) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 0 * param_size, param_weights_diff); // w
+        if (NUM_K > 1 && params_propagate_down[1]) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 1 * param_size, param_mu1_diff); // mu1
+        if (NUM_K > 2 && params_propagate_down[2]) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 2 * param_size, param_mu2_diff); // mu2
+        if (NUM_K > 3 && params_propagate_down[3]) caffe_axpy(param_size, (Dtype)1, bwd_gradients_data + 3 * param_size, param_sigma_diff); // sigma
 
         // if we need to ignore last few gauss then make sure we do not update their parameters
         if (this->num_units_ignore > 0) {
@@ -928,7 +935,7 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
             this->set_last_n_gauss_to_zero(param_mu2_diff, this->num_units_ignore);
             this->set_last_n_gauss_to_zero(param_sigma_diff, this->num_units_ignore);
         }
-    }*/
+    }
 }
 
 template <typename Dtype>
