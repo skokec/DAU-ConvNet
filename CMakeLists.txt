@@ -147,7 +147,7 @@ dau_conv_generate_export_configs()
 
 get_directory_property(has_parent PARENT_DIRECTORY)
 
-if (${has_parent})
+if (has_parent)
   set(DAUConvNet_OBJ_TARGET ${DAUConvNet_OBJ_TARGET} PARENT_SCOPE)
   set(DAUConvNet_OBJS ${DAUConvNet_OBJS} PARENT_SCOPE)
   set(DAUConvNet_CU_OBJS ${DAUConvNet_CU_OBJS} PARENT_SCOPE)
