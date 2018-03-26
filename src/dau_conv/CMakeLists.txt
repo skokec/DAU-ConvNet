@@ -36,8 +36,11 @@ set(DAUConvNet_LINKER_LIBS ${DAUConvNet_LINKER_LIBS} PARENT_SCOPE)
 add_library(dau-conv ${DAUConvNet_OBJS})
 target_link_libraries(dau-conv ${DAUConvNet_LINKER_LIBS})
 
+
+
 add_executable(main ../main.cpp)
 target_link_libraries(main dau-conv)
+target_include_directories(main ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 dau_conv_default_properties(main)
 
 

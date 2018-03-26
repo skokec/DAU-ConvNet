@@ -88,7 +88,7 @@ endif()
 # ---[ Options
 dau_conv_option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 dau_conv_option(USE_OPENCV "Build with OpenCV support" ON)
-dau_conv_option(USE_OPENMP "Link with OpenMP (when your BLAS wants OpenMP and you get linker errors)" OFF)
+dau_conv_option(USE_DUMMY_CUDA_IMPL "For debugging purpose; do not compile CUDA kernels (fast compile time)" OFF)
 
 # ---[ Dependencies
 include(cmake/Dependencies.cmake)
@@ -102,6 +102,11 @@ if(USE_libstdcpp)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
   message("-- Warning: forcing libstdc++ (controlled by USE_libstdcpp option in cmake)")
 endif()
+
+if(${USE_DUMMY_CUDA_IMPL})
+  list(APPEND DAUConvNet_DEFINITIONS "-DDAU_USE_DUMMY_CUDA_IMPL")
+endif()
+
 
 # ---[ Warnings
 dau_conv_warnings_disable(CMAKE_CXX_FLAGS -Wno-sign-compare -Wno-uninitialized)
@@ -140,9 +145,13 @@ add_subdirectory(src/dau_conv)
 # ---[ Export configs generation
 dau_conv_generate_export_configs()
 
-set(DAUConvNet_OBJ_TARGET ${DAUConvNet_OBJ_TARGET} PARENT_SCOPE)
-set(DAUConvNet_OBJS ${DAUConvNet_OBJS} PARENT_SCOPE)
-set(DAUConvNet_CU_OBJS ${DAUConvNet_CU_OBJS} PARENT_SCOPE)
-set(DAUConvNet_INCLUDE_DIRS ${DAUConvNet_INCLUDE_DIRS} PARENT_SCOPE)
-set(DAUConvNet_INCLUDE_DIR ${DAUConvNet_INCLUDE_DIR} PARENT_SCOPE)
-set(DAUConvNet_LINKER_LIBS ${DAUConvNet_LIBS} PARENT_SCOPE)
+get_directory_property(has_parent PARENT_DIRECTORY)
+
+if (${has_parent})
+  set(DAUConvNet_OBJ_TARGET ${DAUConvNet_OBJ_TARGET} PARENT_SCOPE)
+  set(DAUConvNet_OBJS ${DAUConvNet_OBJS} PARENT_SCOPE)
+  set(DAUConvNet_CU_OBJS ${DAUConvNet_CU_OBJS} PARENT_SCOPE)
+  set(DAUConvNet_INCLUDE_DIRS ${DAUConvNet_INCLUDE_DIRS} PARENT_SCOPE)
+  set(DAUConvNet_INCLUDE_DIR ${DAUConvNet_INCLUDE_DIR} PARENT_SCOPE)
+  set(DAUConvNet_LINKER_LIBS ${DAUConvNet_LIBS} PARENT_SCOPE)
+endif()

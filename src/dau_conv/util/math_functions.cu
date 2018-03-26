@@ -4,7 +4,8 @@
 
 #include "dau_conv/util/common.hpp"
 #include "dau_conv/util/math_functions.hpp"
-#include "dau_conv/util/custom_cub.cuh"
+
+#include <cub/cub/cub.cuh>
 
 namespace DAUConvNet {
 
@@ -344,7 +345,7 @@ void caffe_gpu_sum(const int n, const Dtype* x, Dtype* y, const int num_segments
   void* temp_storage_d = (void*)1;
 
   if (with_add)
-    CUDA_CHECK(custom_cub::segmentedSumWithAdd(temp_storage_d, temp_storage_bytes, x, y,  num_segments, offsets_gpu, offsets_gpu + 1, streamId, false));
+    M_Assert(false, "caffe_gpu_sum does not support with_add=true any more ");
   else
     CUDA_CHECK(cub::DeviceSegmentedReduce::Sum(temp_storage_d, temp_storage_bytes, x, y,  num_segments, offsets_gpu, offsets_gpu + 1, streamId, false));
 }
