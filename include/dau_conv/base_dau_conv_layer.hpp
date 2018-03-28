@@ -66,11 +66,13 @@ public:
     void setup(bool use_gmm_gauss_normalization,
                bool use_gmm_square_gauss_normalization,
                Dtype gmm_sigma_lower_bound,
-               Dtype gmm_component_border_bound) {
+               Dtype gmm_component_border_bound,
+               bool offsets_already_centered) {
         this->use_unit_normalization = use_gmm_gauss_normalization;
         this->use_square_unit_normalization = use_gmm_square_gauss_normalization;
         this->sigma_lower_bound = gmm_sigma_lower_bound;
         this->component_border_bound = gmm_component_border_bound;
+        this->offsets_already_centered = offsets_already_centered;
     }
 
     virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, cublasHandle_t cublas_handle);
@@ -90,6 +92,7 @@ protected:
     Dtype sigma_lower_bound;
     Dtype component_border_bound;
 
+    bool offsets_already_centered;
 };
 
 struct DAUConvSettings {
@@ -111,6 +114,7 @@ struct DAUConvSettings {
     int merge_iteration_step;
     float merge_threshold;
 
+    bool offsets_already_centered;
 };
 
 template <typename Dtype>
@@ -158,8 +162,9 @@ public:
 
     static const int ALLOWED_UNITS_GROUP = 2;
 
-    explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false)
-            : cublas_handle(cublas_handle), handles_setup_(false), ignore_edge_gradients_(ignore_edge_gradients) {
+    explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true)
+            : cublas_handle(cublas_handle), handles_setup_(false),
+              ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered) {
         this->aggregation.param = NULL;
         this->aggregation.kernels = NULL;
     }
@@ -296,6 +301,10 @@ protected:
     // NOTE: since gradients are not avegred but summed this should not be an issue, so this is used only for unit-testing (to make it compatible with cpu version)
     bool ignore_edge_gradients_ = false;
     bool last_k_optional = true;
+
+    // NOTE: in contrast to GaussianConv we use offsets (mu1, mu2) that can be already centered around the center of kernel
+    //       so that we are not constrainted by kerneL_size too much
+    bool offsets_already_centered_;
 
     bool handles_setup_;
 

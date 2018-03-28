@@ -36,11 +36,17 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
         // clip sigma, mu1 and mu2 to within bounds
         caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, this->unit_sigma_lower_bound, this->param_sigma(), this->param_sigma());
 
-        caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, (Dtype)this->unit_border_bound, this->param_mu1(), this->param_mu1());
-        caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, (Dtype)this->unit_border_bound, this->param_mu2(), this->param_mu2());
+		Dtype mu1_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->kernel_w_/2) + unit_border_bound);
+		Dtype mu2_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->kernel_h_/2) + unit_border_bound);
 
-        caffe_gpu_clip_upper(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, this->kernel_w_-1 - (Dtype)this->unit_border_bound, this->param_mu1(), this->param_mu1());
-        caffe_gpu_clip_upper(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, this->kernel_h_-1 - (Dtype)this->unit_border_bound, this->param_mu2(), this->param_mu2());
+		Dtype mu1_upper_limit = this->offsets_already_centered_  == false ? this->kernel_w_-1 - (Dtype)unit_border_bound : ((int)(this->kernel_w_/2) - unit_border_bound);
+		Dtype mu2_upper_limit = this->offsets_already_centered_  == false ? this->kernel_h_-1 - (Dtype)unit_border_bound : ((int)(this->kernel_h_/2) - unit_border_bound);
+
+        caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu1_lower_limit, this->param_mu1(), this->param_mu1());
+        caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu2_lower_limit, this->param_mu2(), this->param_mu2());
+
+        caffe_gpu_clip_upper(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu1_upper_limit, this->param_mu1(), this->param_mu1());
+        caffe_gpu_clip_upper(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu2_upper_limit, this->param_mu2(), this->param_mu2());
     }
 
 	const int height_out = top_shape[this->channel_axis_ + 1];
@@ -87,7 +93,8 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 
 
         this->forward_obj->forward_pass(interm_data,
-										filter_offsets_float_mu1, filter_offsets_float_mu2, filter_weights, DAUConvForward<Dtype>::SGF, this->kernel_w_, this->kernel_h_,
+										filter_offsets_float_mu1, filter_offsets_float_mu2, filter_weights, DAUConvForward<Dtype>::SGF,
+										this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
 										top_data,
 										buffer_fwd_.filtered_images,
 										NULL,
@@ -197,7 +204,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
             // WARNING: if this->kernel_w_ or this->kernel_h_ changes then memory will not be allocated properly
 			backward_grad_obj->backward_pass(interm_data, top_error,
 									   filter_offsets_float_mu1, filter_offsets_float_mu2,
-									   filter_weights, this->kernel_w_, this->kernel_h_,
+									   filter_weights, this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
 									   bwd_gradients_data,
 									   this->buffer_bwd_.filtered_images,
 									   this->buffer_bwd_.error_images,
@@ -272,14 +279,18 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 				caffe_gpu_scal(param_size, (Dtype)-1, param_mu1_backprop, cublas_handle);
 				caffe_gpu_scal(param_size, (Dtype)-1, param_mu2_backprop, cublas_handle);
 
-				caffe_gpu_add_scalar(param_size, (Dtype)(this->kernel_w_ - 1), param_mu1_backprop);
-				caffe_gpu_add_scalar(param_size, (Dtype)(this->kernel_h_ - 1), param_mu2_backprop);
+				// if params are already centered then nothing else needed
+				if (this->offsets_already_centered_ == false) {
+					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_w_ - 1), param_mu1_backprop);
+					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_h_ - 1), param_mu2_backprop);
+				}
 			}
 
 
 			// now we take the blured error data and perform sum over shifted input data with our custom kernel i.e. forward pass
 			this->backward_backporp_obj->forward_pass(interm_data,
-													  param_mu1_backprop, param_mu2_backprop, filter_weights, DAUConvForward<Dtype>::FGS, this->kernel_w_, this->kernel_h_,
+													  param_mu1_backprop, param_mu2_backprop, filter_weights, DAUConvForward<Dtype>::FGS,
+													  this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
 													  bottom_error,
 													  buffer_fwd_.filtered_images,
 													  NULL,
@@ -355,7 +366,7 @@ __global__ void conv_gauss_precompute_sigma_kernel(const int n, Dtype* buf_sigma
 }
 
 template <typename Dtype>
-__global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int k_h,
+__global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int k_h, bool offsets_already_centered,
 												const Dtype* W, const Dtype* MU1, const Dtype* MU2, const Dtype* SIGMA_2_INV, const Dtype* SIGMA_3_INV, const Dtype* SIGMA_2_INV_HALF,
 												Dtype* guass_dist, Dtype* guass_deriv_mu1, Dtype* guass_deriv_mu2, Dtype* guass_deriv_sigma) {
 
@@ -364,8 +375,8 @@ __global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int 
 	for (int n = blockIdx.z * blockDim.z + threadIdx.z; n < N; n += blockDim.z * gridDim.z){
 		// read w, mu1, mu2, sigma and other data needed to compute gaussian Distributions
 		//const Dtype w = W[n];
-		const Dtype mu1 = MU1[n];
-		const Dtype mu2 = MU2[n];
+		const Dtype mu1 = MU1[n] + (offsets_already_centered  ? (int)(k_w/2) : 0);
+		const Dtype mu2 = MU2[n] + (offsets_already_centered  ? (int)(k_h/2) : 0);
 		const Dtype sigma_square_inv = SIGMA_2_INV[n];
 		const Dtype sigma_square_inv_half = SIGMA_2_INV_HALF[n];
 		const Dtype sigma_cube_inv = SIGMA_3_INV[n];
@@ -486,11 +497,18 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	// clip sigma, mu1 and mu2 to within bounds
 	caffe_gpu_clip_lower(S*F*G, this->sigma_lower_bound, gauss_params_sigma, gauss_params_sigma);
 
-	caffe_gpu_clip_lower(S*F*G, (Dtype)this->component_border_bound, gauss_params_mu1, gauss_params_mu1);
-	caffe_gpu_clip_lower(S*F*G, (Dtype)this->component_border_bound, gauss_params_mu2, gauss_params_mu2);
+	Dtype mu1_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_w/2) + component_border_bound);
+	Dtype mu2_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_h/2) + component_border_bound);
 
-	caffe_gpu_clip_upper(S*F*G, this->kernel_w-1 - (Dtype)this->component_border_bound, gauss_params_mu1, gauss_params_mu1);
-	caffe_gpu_clip_upper(S*F*G, this->kernel_h-1 - (Dtype)this->component_border_bound, gauss_params_mu2, gauss_params_mu2);
+	Dtype mu1_upper_limit = this->offsets_already_centered  == false ? kernel_w-1 - (Dtype)component_border_bound : ((int)(kernel_w/2) - component_border_bound);
+	Dtype mu2_upper_limit = this->offsets_already_centered  == false ? kernel_h-1 - (Dtype)component_border_bound : ((int)(kernel_h/2) - component_border_bound);
+
+
+	caffe_gpu_clip_lower(S*F*G, mu1_lower_limit, gauss_params_mu1, gauss_params_mu1);
+	caffe_gpu_clip_lower(S*F*G, mu2_lower_limit, gauss_params_mu2, gauss_params_mu2);
+
+	caffe_gpu_clip_upper(S*F*G, mu1_upper_limit, gauss_params_mu1, gauss_params_mu1);
+	caffe_gpu_clip_upper(S*F*G, mu2_upper_limit, gauss_params_mu2, gauss_params_mu2);
 
 
 	// 0. precompute  sigma^2, sigma^3 and (sigma^2)/2
@@ -514,7 +532,7 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	Dtype* deriv_mu2 = output.d_params() + 2 * d_param_size;
 	Dtype* deriv_sigma = output.d_params() + 3 * d_param_size;
 
-	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock>>>(S*G*F, K_w, K_h, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
+	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock>>>(S*G*F, K_w, K_h, this->offsets_already_centered, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
 
 	// 2. for each filter (G, dG/dx, dG/dy, dG/dsigma) calculate sums (use different sums if using normalization by square sum)
 	Dtype* guass_norm = this->param_temp(GAUSS_NORM);

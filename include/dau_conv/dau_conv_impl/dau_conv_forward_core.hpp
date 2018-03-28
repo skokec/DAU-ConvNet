@@ -1860,7 +1860,7 @@ __global__  void
 perpare_weights_and_offsets(const float* filter_weights, const float* filter_offsets_x, const float* filter_offsets_y,
                             float *prepared_filter_weights, int *prepared_filter_offsets, float* prepared_filter_offsets_and_weights,
                             int S, int G, int F, int kernel_w, int kernel_h,
-                            const DAUConvForward<float>::PARAM_FORMAT param_format) {
+                            const DAUConvForward<float>::PARAM_FORMAT param_format, const bool offset_already_centered) {
 
     static const int NUM_SM = BlockIndexingT::NUM_SM;
     static const int Bx = BlockIndexingT::Bx;
@@ -1976,15 +1976,15 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
     float4 offset_y;
 
     // read offset and convert them from [0..k_w] into [-k_w/2 ... k_w/2 ] i.e. convert to offsets with coord at center of kernel
-    if (NUM_READ_FEATURES > 0) offset_x.x = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 0 * input_f_offset] - kernel_w/2;
-    if (NUM_READ_FEATURES > 1) offset_x.y = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 1 * input_f_offset] - kernel_w/2;
-    if (NUM_READ_FEATURES > 2) offset_x.z = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 2 * input_f_offset] - kernel_w/2;
-    if (NUM_READ_FEATURES > 3) offset_x.w = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 3 * input_f_offset] - kernel_w/2;
+    if (NUM_READ_FEATURES > 0) offset_x.x = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 0 * input_f_offset] - (offset_already_centered == false ? kernel_w/2 : 0);
+    if (NUM_READ_FEATURES > 1) offset_x.y = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 1 * input_f_offset] - (offset_already_centered == false ? kernel_w/2 : 0);
+    if (NUM_READ_FEATURES > 2) offset_x.z = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 2 * input_f_offset] - (offset_already_centered == false ? kernel_w/2 : 0);
+    if (NUM_READ_FEATURES > 3) offset_x.w = reinterpret_cast<const float*>(filter_offsets_x4)[input_index + 3 * input_f_offset] - (offset_already_centered == false ? kernel_w/2 : 0);
 
-    if (NUM_READ_FEATURES > 0) offset_y.x = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 0 * input_f_offset] - kernel_h/2;
-    if (NUM_READ_FEATURES > 1) offset_y.y = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 1 * input_f_offset] - kernel_h/2;
-    if (NUM_READ_FEATURES > 2) offset_y.z = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 2 * input_f_offset] - kernel_h/2;
-    if (NUM_READ_FEATURES > 3) offset_y.w = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 3 * input_f_offset] - kernel_h/2;
+    if (NUM_READ_FEATURES > 0) offset_y.x = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 0 * input_f_offset] - (offset_already_centered == false ? kernel_h/2 : 0);
+    if (NUM_READ_FEATURES > 1) offset_y.y = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 1 * input_f_offset] - (offset_already_centered == false ? kernel_h/2 : 0);
+    if (NUM_READ_FEATURES > 2) offset_y.z = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 2 * input_f_offset] - (offset_already_centered == false ? kernel_h/2 : 0);
+    if (NUM_READ_FEATURES > 3) offset_y.w = reinterpret_cast<const float*>(filter_offsets_y4)[input_index + 3 * input_f_offset] - (offset_already_centered == false ? kernel_h/2 : 0);
 
     // offset is relative to shared memory organization which is defined by  BlockSharedMemory parameters:
     //		- SharedMem::ALLOC_WIDTH
@@ -2248,14 +2248,14 @@ public:
 
     void create_input(float* prepared_filter_weights, int* prepared_filter_offsets, float* prepared_filter_offsets_and_weights, // OUTPUT
                       const float* filter_weights, const float* filter_offsets_float_x, const float* filter_offsets_float_y, // INPUT
-                      const int kernel_w, const int kernel_h, const DAUConvForward<float>::PARAM_FORMAT param_format, cudaStream_t streamId = NULL) {
+                      const int kernel_w, const int kernel_h, const DAUConvForward<float>::PARAM_FORMAT param_format, const bool offsets_already_centered, cudaStream_t streamId = NULL) {
 
         if (NUM_BATCH_FEATURES == 4)
-            perpare_weights_and_offsets<BlockIndexingT, float4, int4><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format);
+            perpare_weights_and_offsets<BlockIndexingT, float4, int4><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format, offsets_already_centered);
         else if (NUM_BATCH_FEATURES == 2)
-            perpare_weights_and_offsets<BlockIndexingT, float2, int2><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format);
+            perpare_weights_and_offsets<BlockIndexingT, float2, int2><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format, offsets_already_centered);
         else
-            perpare_weights_and_offsets<BlockIndexingT, float, int><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format);
+            perpare_weights_and_offsets<BlockIndexingT, float, int><<<numBlocks,threadsPerBlock, 0, streamId>>>(filter_weights, filter_offsets_float_x, filter_offsets_float_y, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights, S, G, F, kernel_w, kernel_h, param_format, offsets_already_centered);
 
         if (0) {
 
@@ -2509,7 +2509,7 @@ public:
 
     clock_t start_t = clock();
 #endif
-            weight_and_offsets_cuda_prepare.create_input(p.prepared_filter_weights, p.prepared_filter_offsets, p.prepared_filter_offsets_and_weights, p.filter_weights, p.filter_offsets_float_x, p.filter_offsets_float_y, p.kernel_w, p.kernel_h, p.param_format, p.streamId);
+            weight_and_offsets_cuda_prepare.create_input(p.prepared_filter_weights, p.prepared_filter_offsets, p.prepared_filter_offsets_and_weights, p.filter_weights, p.filter_offsets_float_x, p.filter_offsets_float_y, p.kernel_w, p.kernel_h, p.param_format, p.offsets_already_centered, p.streamId);
 #ifdef PROFILE_CUDA
             cudaDeviceSynchronize();
 

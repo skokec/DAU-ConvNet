@@ -106,12 +106,12 @@ void DAUConvForward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype *
     this->streamId = streamId;
 }
 template <typename Dtype>
-void DAUConvForward<Dtype>::get_allocation_sizes(const int kernel_width, const int kernel_height,
+void DAUConvForward<Dtype>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered,
                                                    size_t* prepared_filtered_images_size,
                                                    size_t* prepared_filter_weights_size,
                                                    size_t* prepared_filter_offsets_size) {
 
-    CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G);
+    CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, offsets_already_centered);
 
     params.set_params_for_allocation_call(prepared_filtered_images_size, prepared_filter_weights_size, prepared_filter_offsets_size);
 
@@ -125,14 +125,15 @@ void DAUConvForward<Dtype>::get_allocation_sizes(const int kernel_width, const i
 template <typename Dtype>
 void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
                                            const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
-                                           const Dtype* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height,
+                                           const Dtype* filter_weights, const PARAM_FORMAT param_format,
+										   const int kernel_width, const int kernel_height, const bool offsets_already_centered,
                                            Dtype* output,
                                            Dtype* prepared_filtered_images,
                                            Dtype* prepared_filter_weights,
                                            int* prepared_filter_offsets,
                                            Dtype* prepared_filter_offsets_and_weights, cudaStream_t streamId) {
 
-	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G);
+	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, offsets_already_centered);
 
 	params.set_params_for_allocation_call(NULL, NULL, NULL);
 	params.set_params_for_kernel_call(filtered_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, param_format, kernel_width, kernel_height, output,
@@ -223,12 +224,12 @@ void DAUConvForward<double>::call_cuda_kernel(CUDAParams& params) {
 template DAUConvForward<float>::DAUConvForward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool use_interpolation);
 template DAUConvForward<double>::DAUConvForward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool use_interpolation);
 
-template void DAUConvForward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
-template void DAUConvForward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
+template void DAUConvForward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
+template void DAUConvForward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
 
-template void DAUConvForward<float>::forward_pass(const float* filtered_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, float* output, float* prepared_filtered_images, float* prepared_filter_weights, int* prepared_filter_offsets, float* prepared_filter_offsets_and_weights, cudaStream_t streamId);
-template void DAUConvForward<double>::forward_pass(const double* filtered_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, double* output, double* prepared_filtered_images, double* prepared_filter_weights, int* prepared_filter_offsets, double* prepared_filter_offsets_and_weights, cudaStream_t streamId);
+template void DAUConvForward<float>::forward_pass(const float* filtered_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_filter_weights, int* prepared_filter_offsets, float* prepared_filter_offsets_and_weights, cudaStream_t streamId);
+template void DAUConvForward<double>::forward_pass(const double* filtered_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_filter_weights, int* prepared_filter_offsets, double* prepared_filter_offsets_and_weights, cudaStream_t streamId);
 
-}  // namespace dau_conv_impl
+}  // namespace caffe
 
 

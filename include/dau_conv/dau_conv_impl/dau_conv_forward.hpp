@@ -25,14 +25,15 @@ public:
 
 	DAUConvForward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool use_interpolation);
 
-	void get_allocation_sizes(const int kernel_width, const int kernel_height,
+	void get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered,
 							  size_t* prepared_filtered_images_size,
 							  size_t* prepared_filter_weights_size,
 							  size_t* prepared_filter_offsets_size);
 
 	void forward_pass(const Dtype* filtered_images,
 					  const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
-					  const Dtype* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height,
+					  const Dtype* filter_weights, const PARAM_FORMAT param_format,
+					  const int kernel_width, const int kernel_height, const bool offsets_already_centered,
 					  Dtype* output,
 					  Dtype* prepared_filtered_images,
 					  Dtype* prepared_filter_weights,
@@ -57,11 +58,12 @@ public:
 		int *prepared_filter_offsets;
 		int kernel_w, kernel_h;
 		PARAM_FORMAT param_format;
+		bool offsets_already_centered;
 		cudaStream_t streamId;
 
 	public:
-		CUDAParams(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G) :
-				img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G) {
+		CUDAParams(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool offsets_already_centered) :
+				img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G), offsets_already_centered(offsets_already_centered) {
 		}
 
 		void set_params_for_allocation_call(size_t *alloc_img, size_t *alloc_w, size_t *alloc_off);

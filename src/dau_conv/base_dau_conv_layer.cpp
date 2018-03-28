@@ -91,6 +91,8 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
                                            NUM_UNITS_PER_AXIS_X, NUM_UNITS_PER_AXIS_Y, this->num_units_ignore,
                                            this->conv_in_channels_, this->conv_out_channels_, this->kernel_h_, this->kernel_w_);
 
+    this->offsets_already_centered_ = settings.offsets_already_centered;
+
     this->unit_border_bound = settings.component_border_bound;
     this->unit_sigma_lower_bound = settings.sigma_lower_bound;
 
@@ -114,9 +116,9 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
 
     // setup for precomputed kernels
     this->kernel_compute->setup(this->use_unit_normalization,
-                                   this->use_square_unit_normalization,
-                                   this->unit_sigma_lower_bound,
-                                   0); // unit_border_bound = 0 (do not need border bound for this implementation)
+                                this->use_square_unit_normalization,
+                                this->unit_sigma_lower_bound,0, // unit_border_bound = 0 (do not need border bound for this implementation)
+                                this->offsets_already_centered_);
 
     // setup default bottom/top dimensions to zero
     this->bottom_dim_ = 0;
@@ -164,8 +166,8 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     // by default we generate kernels with w=1, mu=(0,0) so fill buffers with them
     // NOTE: mu=(0,0) is center of kernel so use that value
     caffe_gpu_set(1, (Dtype)1.0f, aggregation.param->weight());
-    caffe_gpu_set(1, (Dtype)(aggregation.kernel_h_-1)/2, aggregation.param->mu1());
-    caffe_gpu_set(1, (Dtype)(aggregation.kernel_w_-1)/2, aggregation.param->mu2());
+    caffe_gpu_set(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_w_/2) : 0), aggregation.param->mu1());
+    caffe_gpu_set(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_h_/2) : 0), aggregation.param->mu2());
 
     this->use_interpolation_ = true;
 
@@ -235,7 +237,7 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
 
 
     forward_obj.reset(new DAUConvNet::DAUConvForward<Dtype>(this->width_, this->height_, this->width_out_, this->height_out_, this->batch_num_, this->conv_in_channels_, this->conv_out_channels_, this->units_per_channel, this->use_interpolation_));
-    forward_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_,
+    forward_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
                                       &buffer_fwd_.filtered_images_sizes_,
                                       &buffer_fwd_.filter_weights_sizes_,
                                       &buffer_fwd_.filter_offsets_sizes_);
@@ -245,7 +247,7 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
 
     // WARNING: if this->kernel_w_ or this->kernel_h_ changes then memory will not be allocated properly so we should use here
     //          maximum kernel_w_ and kernel_h_ allowed
-    backward_grad_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_,
+    backward_grad_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
                                             &buffer_bwd_.filtered_images_sizes_,
                                             &buffer_bwd_.error_image_sizes_,
                                             &buffer_bwd_.filter_weights_sizes_,
@@ -257,7 +259,7 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
     size_t filtered_error_sizes_, filter_error_weights_sizes_, filter_error_offsets_sizes_;
 
     backward_backporp_obj.reset(new DAUConvNet::DAUConvForward<Dtype>(max_width, max_height, max_width, max_height, this->batch_num_, this->conv_out_channels_, this->conv_in_channels_, this->units_per_channel, this->use_interpolation_));
-    backward_backporp_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_,
+    backward_backporp_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
                                                 &filtered_error_sizes_,
                                                 &filter_error_weights_sizes_,
                                                 &filter_error_offsets_sizes_);
@@ -433,7 +435,7 @@ void offset_and_sum_opencv(const Dtype* input_data,
                     const int num_, const int conv_in_channels_, const int NUM_GAUSS, const int conv_out_channels_,
                     const int width_, const int height_,
                     const int width_out_, const int height_out_, const int kernel_width, const int kernel_height,
-                   const DAUConvForward<float>::PARAM_FORMAT INPUT_FORMAT = DAUConvForward<float>::SGF) {
+                    const bool offsets_already_centered, const DAUConvForward<float>::PARAM_FORMAT INPUT_FORMAT = DAUConvForward<float>::SGF) {
 
     // perform offset and sum over individual outputs
 #define OFFSET(l,k,j,i, num_l, num_k, num_j, num_i) ((( (l)*(num_k) + (k)) * (num_j) + (j))*(num_i) + (i) )
@@ -477,8 +479,8 @@ void offset_and_sum_opencv(const Dtype* input_data,
 
                             float w = filter_weights[param_offset];
 
-                            float offset_x = filter_offsets_float_mu1[param_offset] - kernel_width/2;
-                            float offset_y = filter_offsets_float_mu2[param_offset] - kernel_height/2;
+                            float offset_x = filter_offsets_float_mu1[param_offset] - (offsets_already_centered == false ? kernel_width/2 : 0);
+                            float offset_y = filter_offsets_float_mu2[param_offset] - (offsets_already_centered == false ? kernel_height/2 : 0);
 
                             int offset_x_int = floor(offset_x);
                             int offset_y_int = floor(offset_y);
@@ -591,7 +593,7 @@ void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector
                             this->batch_num_, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_,
                             this->width_, this->height_,
                             this->width_out_, this->height_out_,
-                            this->kernel_w_, this->kernel_h_);
+                            this->kernel_w_, this->kernel_h_, this->offsets_already_centered_);
 
         // add bias if needed
         if (this->bias_term_) {
@@ -611,7 +613,8 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
                            const int num_, const int conv_in_channels_, const int NUM_GAUSS, const int conv_out_channels_,
                            const int width_, const int height_,
                            const int width_out_, const int height_out_, const int kernel_width, const int kernel_height,
-                           const bool ignore_edge_gradients, const DAUConvForward<float>::PARAM_FORMAT INPUT_FORMAT = DAUConvForward<float>::SGF) {
+                           const bool ignore_edge_gradients, const bool offsets_already_centered,
+                           const DAUConvForward<float>::PARAM_FORMAT INPUT_FORMAT = DAUConvForward<float>::SGF) {
 
     // perform offset and sum over individual outputs
 #define OFFSET(l,k,j,i, num_l, num_k, num_j, num_i) ((( (l)*(num_k) + (k)) * (num_j) + (j))*(num_i) + (i) )
@@ -678,8 +681,8 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
 
                             float w = filter_weights[param_offset];
 
-                            float offset_x = filter_offsets_float_mu1[param_offset] - kernel_width/2;
-                            float offset_y = filter_offsets_float_mu2[param_offset] - kernel_height/2;
+                            float offset_x = filter_offsets_float_mu1[param_offset] - (offsets_already_centered == false ? kernel_width/2 : 0);
+                            float offset_y = filter_offsets_float_mu2[param_offset] - (offsets_already_centered == false ? kernel_height/2 : 0);
 
                             int offset_x_int = floor(offset_x);
                             int offset_y_int = floor(offset_y);
@@ -814,8 +817,11 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                 caffe_scal(param_size, (Dtype)-1, param_mu1_backprop);
                 caffe_scal(param_size, (Dtype)-1, param_mu2_backprop);
 
-                caffe_add_scalar(param_size, (Dtype)(this->kernel_w_ - 1), param_mu1_backprop);
-                caffe_add_scalar(param_size, (Dtype)(this->kernel_h_ - 1), param_mu2_backprop);
+                // if params are already centered then nothing else needed
+                if (this->offsets_already_centered_ == false) {
+                    caffe_add_scalar(param_size, (Dtype) (this->kernel_w_ - 1), param_mu1_backprop);
+                    caffe_add_scalar(param_size, (Dtype) (this->kernel_h_ - 1), param_mu2_backprop);
+                }
             }
 
             // now we take the blured error data and perform sum over shifted input data with our custom kernel i.e. forward pass
@@ -824,7 +830,8 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                                   bottom_error,
                                   this->batch_num_, this->conv_out_channels_, this->units_per_channel, this->conv_in_channels_,
                                   this->width_, this->height_,
-                                  this->width_, this->height_, this->kernel_w_, this->kernel_h_, DAUConvForward<float>::FGS);
+                                  this->width_, this->height_, this->kernel_w_, this->kernel_h_,
+                                  this->offsets_already_centered_, DAUConvForward<float>::FGS);
 
 
         }
@@ -904,7 +911,8 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
                                       bwd_gradients_data + k * param_size,
                                       this->batch_num_, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_,
                                       this->width_, this->height_,
-                                      this->width_, this->height_, this->kernel_w_, this->kernel_h_, this->ignore_edge_gradients_);
+                                      this->width_, this->height_, this->kernel_w_, this->kernel_h_,
+                                      this->ignore_edge_gradients_, this->offsets_already_centered_);
 
             }
             if (top_error_expended != NULL)

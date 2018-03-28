@@ -141,13 +141,13 @@ void DAUConvBackward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype*
 }
 
 template <typename Dtype>
-void DAUConvBackward<Dtype>::get_allocation_sizes(const int kernel_width, const int kernel_height,
+void DAUConvBackward<Dtype>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered,
                                                                     size_t* prepared_filtered_images_size,
                                                                     size_t* prepared_error_images_size,
                                                                     size_t* prepared_filter_weights_size,
                                                                     size_t* prepared_filter_offsets_size) {
 
-	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K);
+	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K, offsets_already_centered);
 
 	params.set_params_for_allocation_call(prepared_filtered_images_size, prepared_error_images_size, prepared_filter_weights_size, prepared_filter_offsets_size);
 	params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, NULL, kernel_width, kernel_height, NULL,
@@ -160,7 +160,7 @@ template <typename Dtype>
 void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const Dtype* error_images,
 													  const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
 													  const Dtype* filter_weights,
-													  const int kernel_width, const int kernel_height,
+													  const int kernel_width, const int kernel_height, const bool offsets_already_centered,
 													  Dtype* output,
 													  Dtype* prepared_filtered_images,
 													  Dtype* prepared_error_images,
@@ -169,7 +169,7 @@ void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const D
 													  const bool ignore_edge_gradients,
 													  cudaStream_t streamId) {
 
-	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K);
+	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K, offsets_already_centered);
 
 	params.set_params_for_allocation_call(NULL, NULL, NULL, NULL);
 	params.set_params_for_kernel_call(filtered_images, error_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, kernel_width, kernel_height, output,
@@ -276,9 +276,9 @@ void DAUConvBackward<double>::call_cuda_kernel(CUDAParams& params) {
 template DAUConvBackward<float>::DAUConvBackward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const bool last_k_optional, const bool use_interpolation);
 template DAUConvBackward<double>::DAUConvBackward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const bool last_k_optional, const bool use_interpolation);
 
-template void DAUConvBackward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
-template void DAUConvBackward<float>::backward_pass(const float* filtered_images, const float* error_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const int kernel_width, const int kernel_height, float* output, float* prepared_filtered_images, float* prepared_error_images, float* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
+template void DAUConvBackward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
+template void DAUConvBackward<float>::backward_pass(const float* filtered_images, const float* error_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const int kernel_width, const int kernel_height, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_error_images, float* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
 
-template void DAUConvBackward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
-template void DAUConvBackward<double>::backward_pass(const double* filtered_images, const double* error_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const int kernel_width, const int kernel_height, double* output, double* prepared_filtered_images, double* prepared_error_images, double* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
-}  // namespace dau_conv_impl
+template void DAUConvBackward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
+template void DAUConvBackward<double>::backward_pass(const double* filtered_images, const double* error_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const int kernel_width, const int kernel_height, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_error_images, double* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
+}  // namespace caffe
