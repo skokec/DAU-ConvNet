@@ -40,9 +40,11 @@ public:
 
 	void reshape(int num_in_channels, int num_out_channels, int num_gauss);
 
+	void initialize_params(Tensor w, Tensor mu1, Tensor mu2, Tensor sigma);
+
 	shared_ptr<Tensor*> weight_, mu1_, mu2_, sigma_; // CPU for setting (once) GPU for computing, except for sigma
 
-	OpKernelContext* context_;
+	OpKernelContext* context_ = NULL;
 
 };
 
@@ -56,26 +58,26 @@ public:
 	virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w);
 
 	// main filter weights
-	Tensor* weight_;
+	Tensor* weight_ = NULL;
 
 	// derivative weights for back-propagation and all four parameters
-	Tensor* d_error_;
-	Tensor* d_params_; // four params == [w,mu1,mu2,sigma]
-	OpKernelContext* context_;
+	Tensor* d_error_ = NULL;
+	Tensor* d_params_ = NULL; // four params == [w,mu1,mu2,sigma]
+	OpKernelContext* context_ = NULL;
 };
 
 template <typename Dtype>
 class DAUKernelCompute : public BaseDAUKernelCompute<Dtype> {
 public:
-	//explicit DAUKernelCompute(OpKernelContext* context)
-	//	: context_(context){}
+	explicit DAUKernelCompute(OpKernelContext* context)
+		: context_(context){}
 
 	virtual ~DAUKernelCompute();
 
 	virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
 						 int kernel_h, int kernel_w);
 
-	OpKernelContext* context_;
+	OpKernelContext* context_ = NULL;
 
 protected:
 	void create_precompute_index(const int index_size, const int kernel_size);
@@ -94,7 +96,7 @@ protected:
 
 
 	//Blob<int> tmp_precomp_index_;// pre-computed indexes for caffe_gpu_sum in get_kernels
-	Tensor* tmp_precomp_index_;
+	Tensor* tmp_precomp_index_ = NULL;
 	
 };
 
@@ -123,7 +125,7 @@ public:
 template <typename Dtype>
 class DAUKernelOutputGPU : public DAUKernelOutput<Dtype> {
 public:
-	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_;printf("Getting weight data\n"); auto dat = tmp_ten->flat<Dtype>().data();printf("Got flat\n"); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_error() { Tensor* tmp_ten = this->d_error_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_params() { Tensor* tmp_ten = this->d_params_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 };
@@ -131,6 +133,9 @@ public:
 template <typename Dtype>
 class DAUKernelComputeGPU : public DAUKernelCompute<Dtype> {
 public:
+
+	explicit DAUKernelComputeGPU(OpKernelContext* context)
+		: DAUKernelCompute<Dtype>(context), context_(context){}
 
 	OpKernelContext* context_;
 
@@ -210,7 +215,7 @@ class DAUConvLayerTensorflowGPU : public  BaseDAUConvLayer<Dtype> {
 public:
 
 	explicit DAUConvLayerTensorflowGPU(cublasHandle_t cublas_handle,OpKernelContext* context, bool ignore_edge_gradients = false)
-			: BaseDAUConvLayer<Dtype>(cublas_handle, ignore_edge_gradients), context_(context),own_workspace_data(0), do_on_gpu_(true) {
+			: BaseDAUConvLayer<Dtype>(cublas_handle, ignore_edge_gradients), context_(context),own_workspace_data(0), do_on_gpu_(true), cublasHandle(cublas_handle) {
 
 	}
 
@@ -226,7 +231,8 @@ public:
 	//Dtype* w, Dtype* mu1, Dtype* mu2, Dtype* sigma, bool is_gpu_ptr,
     //                                                           int num_units_per_x, int num_units_per_y, int num_units_ignore,
     //                                                           int conv_in_channels, int conv_out_channels, int kernel_h, int kernel_w
-	virtual void InitializeFromInput(const DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma);
+	virtual void InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma);
+	virtual void test_allocation();
 	virtual vector<int> Reshape(const vector<int>& bottom_shape, const vector<int>& top);
 
 	// make compute_output_shape() public
@@ -240,7 +246,9 @@ public:
 	shared_ptr<Tensor* > param_buffer_mu2_;
 	shared_ptr<Tensor* > param_buffer_sigma_;
 	shared_ptr<Tensor* > param_buffer_bias_;
-	OpKernelContext* context_;
+	OpKernelContext* context_ = NULL;
+	Tensor* allocation_test = NULL;
+	cublasHandle_t cublasHandle;
 protected:
 	virtual bool is_data_on_gpu() { return do_on_gpu_; }
 
@@ -256,7 +264,13 @@ protected:
 	virtual Dtype* param_bias() { return is_data_on_gpu() ? param_buffer_bias_->mutable_gpu_flat<Dtype>().data() : param_buffer_bias_->mutable_cpu_flat<Dtype>().data(); }
 	*/
 
-	virtual Dtype* param_w() { Tensor* tmp_ten = *param_buffer_w_; auto dat = tmp_ten -> flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_w() { 
+		Tensor* tmp_ten = *(param_buffer_w_.get());		
+		auto tdat = tmp_ten -> flat<Dtype>();
+		auto dat = tdat.data();
+		Dtype* t_dat = static_cast<Dtype*>(dat);
+		return t_dat;
+	}
 	virtual Dtype* param_mu1() { Tensor* tmp_ten = *param_buffer_mu1_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* param_mu2() { Tensor* tmp_ten = *param_buffer_mu2_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* param_sigma() { Tensor* tmp_ten = *param_buffer_sigma_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
@@ -298,24 +312,24 @@ protected:
 
 	// accumulated gradients
 	//Blob<Dtype> bwd_gradients_;
-	Tensor* bwd_gradients_;
+	Tensor* bwd_gradients_ = NULL;
 
 
 	// additional buffers
 	//Blob<Dtype> interm_buffer_; // GPU only
 	//Blob<Dtype> tmp_param_buffer_; // GPU and CPU
-	Tensor* interm_buffer_; // GPU only
-	Tensor* tmp_param_buffer_; // GPU and CPU
+	Tensor* interm_buffer_ = NULL; // GPU only
+	Tensor* tmp_param_buffer_ = NULL; // GPU and CPU
 
 
 	//Blob<Dtype> col_buffer_; // CPU only
 	//Blob<Dtype> bias_multiplier_; // GPU and CPU
-	Tensor* col_buffer_; // CPU only
-	Tensor* bias_multiplier_; // GPU and CPU
+	Tensor* col_buffer_=NULL; // CPU only
+	Tensor* bias_multiplier_=NULL; // GPU and CPU
 
 
 	// workspace memory that we have allocated
-	void* own_workspace_data;
+	void* own_workspace_data = NULL;
 
 	bool do_on_gpu_;
 };

@@ -30,11 +30,14 @@ class baseOpOpTest(unittest.TestCase):
                 #  .Input("mu1: float")
                 #  .Input("mu2: float")
                 #  .Input("sigma: float")
-                x_rand = np.random.rand(12,12)
-                W_rand = np.random.rand(12,12)
-                mu1_rand = np.random.rand(1,3,3,3)
-                mu2_rand = np.random.rand(1,3,3,3)
-                sigma_rand = np.random.rand(1,3,3,3)
+                #nchw
+                x_rand = np.random.rand(16,32,64,64)
+
+                #1,conv_in_channels_ == from input, units_per_channel, conv_out_channels_==num filters
+                W_rand = np.random.rand(1,32,4,64)
+                mu1_rand = np.random.rand(1,32,4,64)
+                mu2_rand = np.random.rand(1,32,4,64)
+                sigma_rand = np.random.rand(1,32,4,64)
 
                 result = base_op_module.base_op(x_rand, W_rand, mu1_rand, mu2_rand, sigma_rand).eval()
                 #np.testing.assert_array_equal(result, result_rand)

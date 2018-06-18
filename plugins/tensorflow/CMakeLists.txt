@@ -15,6 +15,7 @@ execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(tf.sysconfi
 
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D GOOGLE_CUDA=1")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TF_CFLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${TF_LFLAGS}")
@@ -104,6 +105,7 @@ add_library(base_op SHARED base_op.cpp)
 #target_link_libraries(base_op ${DAUConvNet_LINKER_LIBS} ${TF_LIB} dau_conv_tensorflow)
 target_link_libraries(base_op dau_conv_tensorflow)
 target_include_directories(base_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+#target_include_directories(base_op PUBLIC "/usr/local/")
 target_include_directories(base_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
 #target_include_directories(base_op PUBLIC ${DAUConvNet_INCLUDE_DIR})
