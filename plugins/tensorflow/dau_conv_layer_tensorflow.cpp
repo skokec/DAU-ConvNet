@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <vector>
 
-//#include "caffe/filler.hpp"
 
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -14,52 +13,35 @@ using namespace std;
 #include <opencv2/gpu/gpu.hpp>
 
 
-//#include <caffe/layers/dau_conv_layer.hpp>
 #include <dau_conv_layer_tensorflow.hpp>
 #include <dau_conv/util/math_functions.hpp>
 
 using namespace tensorflow;
 
-//namespace caffe {
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma){
     //Set the layer parameters from input tensors
 
     settings.offsets_already_centered = true;
-        /*
-    settings.bias_term = param.bias_term();
-    settings.num_output = param.num_output();
-    settings.number_units.assign(param.number_units().begin(), param.number_units().end());
-    settings.kernel_size = param.kernel_size(0);
-    settings.pad = param.pad(0);
-    settings.stride = param.stride(0);
-    settings.unit_normalization = param.unit_normalization();
-    settings.square_unit_normalization = param.square_unit_normalization();
-    settings.mean_iteration_step = param.mean_iteration_step();
-    settings.sigma_iteration_step = param.sigma_iteration_step();
-    settings.merge_iteration_step = param.merge_iteration_step();
-    settings.merge_threshold = param.merge_threshold();
-    settings.sigma_lower_bound = param.sigma_lower_bound();
-    settings.component_border_bound = param.component_border_bound();
-    */
 
-    settings.bias_term = false;
     settings.num_output = 64;
     //num units per X and per Y
     settings.number_units.push_back(2);
     settings.number_units.push_back(2);
-    settings.kernel_size = 3;
-    settings.pad = 1;
+    settings.bias_term = true;
+    settings.kernel_size = 9;
+    settings.pad = 4;
     settings.stride = 1;
-    settings.unit_normalization = false;
-    settings.square_unit_normalization = false;
+    settings.unit_normalization = true;
+    settings.square_unit_normalization = true;
     settings.mean_iteration_step = 1;
     settings.sigma_iteration_step = 1;
-    settings.merge_iteration_step = 1;
-    settings.merge_threshold = 0.5;
-    settings.sigma_lower_bound = 0.1;
-    settings.component_border_bound = 0;
+    settings.component_border_bound = 4;
+    settings.sigma_lower_bound = 0.3;
+    settings.merge_iteration_step = 0;
+    settings.merge_threshold = 1;
+
 
 
 
@@ -73,6 +55,13 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& sett
     this->param_buffer_mu2_ = make_shared<Tensor* >(mu2);
 
     this->param_buffer_sigma_ = make_shared<Tensor* >(sigma);
+
+    if(settings.bias_term){
+        Tensor* bias_temp = new Tensor();
+        Tensor& tmp_ten = *bias_temp;
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w->shape(), &tmp_ten));
+        this->param_buffer_bias_ = make_shared<Tensor*>(bias_temp);    
+    }
     
 }
 template <typename Dtype>
@@ -80,7 +69,6 @@ void DAUConvLayerTensorflowGPU<Dtype>::test_allocation(){
     Tensor tmp_ten;
     OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,1,1,9}), &tmp_ten));
     this->allocation_test = &tmp_ten;
-    printf("----------tmp_ten dtype %d\n", this->allocation_test->dtype());
 }
 
 
@@ -91,12 +79,10 @@ void DAUComponentInitializerTensorflow<Dtype>::InitializeParameters(const DAUCon
 
     // THIS IS AN EMPTY FUNCTION BECAUSE THE VARIABLES ARE INITIALIZED AT INPUT AND
     // AND SET AS LAYER PARAMETERS IN DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput
-    printf("Empty initialization\n");
 }
 
 template <typename Dtype>
 DAUConvLayerTensorflowGPU<Dtype>::~DAUConvLayerTensorflowGPU(){
-    printf("DAUConvLayerTensorflowGPU destructor\n");
     this->deallocate_workspace_mem();
     cublasDestroy(this->cublasHandle);
 }
@@ -117,7 +103,7 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::deallocate_workspace_mem() {
-    if (this->own_workspace_data == NULL){
+    if (this->own_workspace_data != NULL){
         CUDA_CHECK(cudaFree(this->own_workspace_data));
     }    
 
@@ -131,11 +117,11 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
     for(int dm: shape){
       tmp_shape.AddDim(dm);
     }
-
     Dtype* w_data = this->param_w();
     Dtype* mu1_data = this->param_mu1();
     Dtype* mu2_data = this->param_mu2();
     Dtype* sigma_data = this->param_sigma();
+
 
     Tensor* orig_ten_w = *(this->param_buffer_w_);
 
@@ -174,13 +160,11 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
                                              const vector<int>& bottom_shape, bool in_train) {
 
     // call parent to compute all the shape variables and call initialize of parameter shape
-    printf("LayerSetUp\n");
-    
+
     BaseDAUConvLayer<Dtype>::LayerSetUp(settings, param_initializer,
                                         kernel_compute, kernel_param, kernel_output,
                                         bottom_shape, in_train);
 
-    printf("End of layer\n");
 
     // we use actual (learnable) sigma parameter when computing kernels so connect that param with the sigma for aggregation
     static_cast<DAUKernelParamsGPU<Dtype>* >(kernel_param)->sigma_ = this->param_buffer_sigma_;
@@ -189,41 +173,42 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
 
 template <typename Dtype>
 vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_shape, const vector<int>& top_shape) {
+    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
     // call parent to compute all the shape variables
 
-    printf("Base reshape\n");
     const vector<int> new_top_shape = BaseDAUConvLayer<Dtype>::Reshape(bottom_shape, top_shape);
-    printf("Base end\n");
-    for(int i = 0; i< new_top_shape.size(); i++) printf("%d ",new_top_shape[i]);
-    printf("\n");
-    
+
 
     const int max_width = std::max(this->width_out_,this->width_);
     const int max_height = std::max(this->height_out_,this->height_);
 
     // Set up the all ones "bias multiplier" for adding biases
     if (this->bias_term_) {
-        printf("Bias term set\n");
+        Tensor* tmp_bias_multiplier_ten = new Tensor();
+        if(!this->bias_multiplier_){
+            Tensor& tmp_ten = *tmp_bias_multiplier_ten;
+            Status can_allocate = this->context_->allocate_temp(DT_FLOAT, TensorShape({1,this->height_out_*this->width_out_}), &tmp_ten);
+            if(!TF_PREDICT_TRUE(can_allocate.ok())){
+                return new_top_shape;
+            }
+            this->bias_multiplier_ = &tmp_ten;
+        }else{
         vector<int> bias_multiplier_shape(1, this->height_out_ * this->width_out_);
-        //this->bias_multiplier_.Reshape(bias_multiplier_shape);
-        //try to reshape tensor -- dont know if this works..
-        //*this->bias_multiplier_ = this->bias_multiplier_->shaped<Dtype, 2>(TensorShape({1,this->height_out_*this->width_out_}))
         //maybe this is better -- can we even copy the same tensor with no segfault?..
         bool correct_copy = this->bias_multiplier_->CopyFrom(*this->bias_multiplier_,TensorShape({1,this->height_out_*this->width_out_}));
-        if(!correct_copy) printf("Failed reshape layerTensorflowGPU\n");
+        if(!correct_copy) printf("Failed reshape layerTensorflowGPU\n");            
+        }
 
         auto flt = this->bias_multiplier_->template flat<Dtype>();
         auto dat = flt.data();
         Dtype* bias_data = static_cast<Dtype*>(dat);
         const int num_el = this->bias_multiplier_->NumElements();
         //caffe_set(num_el, Dtype(1), bias_data);
-        memset(bias_data,0,sizeof(Dtype) * num_el);
-        for(int i = 0; i < num_el; i++){
-            bias_data[i] = Dtype(1);
-        }
+        //memset(bias_data,Dtype(1),sizeof(Dtype) * num_el);
+        CUDA_CHECK(cudaMemset(bias_data,Dtype(1), sizeof(Dtype)*num_el));
+
     }
-    printf("Allocating buffers\n");
 
     // make sure col_buffer is big enough
     //this->col_buffer_.Reshape(this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_);
@@ -238,9 +223,10 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         if(!TF_PREDICT_TRUE(can_allocate.ok())){
             return new_top_shape;
         }
-        //printf("Allocated %d bytes.\n", 4*this->aggregation.kernel_h_*this->aggregation.kernel_w_* this->height_*this->width_);
-        auto tmp_data = tmp_ten.flat<Dtype>();
-        for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        auto tmp_flt = tmp_ten.flat<Dtype>();
+        Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
+        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
 
         this->col_buffer_= &tmp_ten;
     }else{
@@ -253,16 +239,17 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         //Iterm buffer not defined
         Tensor& tmp_ten = *interm_buffer_ten;
         Status can_allocate = this->context_->allocate_temp(DT_FLOAT, TensorShape({this->batch_num_, std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_), max_height, max_width}), &tmp_ten);
-        printf("Allocated %d bytes.\n", 4*this->batch_num_*std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_)*max_height*max_width);
 
         if(!TF_PREDICT_TRUE(can_allocate.ok())){
             return new_top_shape;
         }
 
-        auto tmp_data = tmp_ten.flat<Dtype>();
-        for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
-
+        auto tmp_flt = tmp_ten.flat<Dtype>();
+        Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
+        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
         this->interm_buffer_= &tmp_ten;
+
 
     }else{
         bool correct_copy = this->interm_buffer_->CopyFrom(*this->interm_buffer_,TensorShape({this->batch_num_, std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_), max_height, max_width}));
@@ -273,13 +260,15 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         //bwd gradients buffer not defined
         Tensor& tmp_ten = *bwd_gradients_ten;
         Status can_allocate = this->context_->allocate_temp(DT_FLOAT, TensorShape({this->NUM_K, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_}), &tmp_ten);
-        printf("Allocated %d bytes.\n", 4*this->NUM_K*this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_);
 
         if(!TF_PREDICT_TRUE(can_allocate.ok())){
             return new_top_shape;
         }
-        auto tmp_data = tmp_ten.flat<Dtype>();
-        for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        auto tmp_flt = tmp_ten.flat<Dtype>();
+        Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
+        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
+
 
         this->bwd_gradients_= &tmp_ten;
     }else{
@@ -291,12 +280,13 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
     if(!this->tmp_param_buffer_){
         Tensor& tmp_ten = *tmp_param_buffer_ten;
         Status can_allocate = this->context_->allocate_temp(DT_FLOAT, TensorShape({2, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_}), &tmp_ten);
-        printf("Allocated %d bytes.\n", 4*2*this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_);
         if(!TF_PREDICT_TRUE(can_allocate.ok())){
             return new_top_shape;
         }
-        auto tmp_data = tmp_ten.flat<Dtype>();
-        for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        auto tmp_flt = tmp_ten.flat<Dtype>();
+        Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
+        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
+        CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
 
         this->tmp_param_buffer_= &tmp_ten;
     }else{
@@ -410,22 +400,17 @@ template void DAUComponentInitializerTensorflow<double>::InitializeParameters(co
 
 template <typename Dtype>
 DAUKernelCompute<Dtype>::~DAUKernelCompute(){
-    //Tensorflow handles destruction of tensors??
-    //Leaving this in causes seg faults / double free errors
-    /*
-    printf("Compute destructor\n");
     for (int i = 0; i < this->kernels_buffers_.size(); i++)
         delete this->kernels_buffers_[i];
 
-    printf("Deleting param buffers\n");
     for (int i = 0; i < this->param_buffers_.size(); i++)
         delete this->param_buffers_[i];
-    printf("Compute destructor done\n");
-    */
 }
+
 
 template <typename Dtype>
 void DAUKernelCompute<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w){
+    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
     this->num_in_channels = num_in_channels;
     this->num_out_channels = num_out_channels;
@@ -482,10 +467,6 @@ void DAUKernelCompute<Dtype>::reshape(int num_in_channels, int num_out_channels,
 
     }
 
-    //already reshaped in upper 4 loop?
-    //for (int i = 0; i < 7; ++i)
-    //    this->param_buffers_[i]->Reshape(1, num_in_channels, num_gauss, num_out_channels);
-
     // pre-computed offset indexes for batched sums (when using caffe_gpu_sum)
     this->create_precompute_index(num_in_channels * num_gauss * num_out_channels, kernel_h * kernel_w);
 
@@ -502,6 +483,7 @@ void DAUKernelParams<Dtype>::initialize_params(Tensor w, Tensor mu1, Tensor mu2,
 
 template <typename Dtype>
 void DAUKernelParams<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss) {
+    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
     Tensor* weight_ten = new Tensor();
     Tensor* sigma_ten = new Tensor();
@@ -523,7 +505,7 @@ void DAUKernelParams<Dtype>::reshape(int num_in_channels, int num_out_channels, 
 
 
     }
-    if (this->mu1_ == false){ 
+    if (this->mu1_ == false){
         //this->mu1_.reset(new Blob<Dtype>());
         Tensor& tmp_ten = *mu1_ten;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
@@ -572,6 +554,8 @@ void DAUKernelParams<Dtype>::reshape(int num_in_channels, int num_out_channels, 
 
 template <typename Dtype>
 void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w) {
+    //TODO REPLACE CopyFrom with tensor allocation and memcpy
+
     //this->weight_.Reshape(num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w);
     Tensor* tmp_weight = new Tensor();
     Tensor* tmp_error = new Tensor();
@@ -629,13 +613,13 @@ template void DAUKernelOutput<double>::reshape(int num_in_channels, int num_out_
 template <typename Dtype>
 void DAUKernelCompute<Dtype>::create_precompute_index(const int index_size, const int kernel_size) {
 
+    //TODO REPLACE CopyFrom with tensor allocation and memcpy
     //tmp_precomp_index_.Reshape(1, 1, 1, index_size + 1);
     //tmp_precomp_index_ = tmp_precomp_index_->template shaped<Dtype,4>({1, 1, 1, index_size + 1});
-    printf("%d \n", this->tmp_precomp_index_);
-    printf("%d \n", tmp_precomp_index_);
     Tensor* precompute_tensor = new Tensor();
     Tensor& tmp_ten = *precompute_tensor;
     if(!this->tmp_precomp_index_){
+
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_INT32, TensorShape({1, 1, 1,index_size + 1}), &tmp_ten));
         this->tmp_precomp_index_=&tmp_ten;
 
@@ -645,10 +629,16 @@ void DAUKernelCompute<Dtype>::create_precompute_index(const int index_size, cons
         tmp_ten = *(this->tmp_precomp_index_);
     }
 
+
     auto flt = tmp_ten.flat<int32_t>();
-    flt(0) = 0;
-    for (int i = 0; i < flt.size()-1;i++)
-        flt(i+1) = kernel_size * (i+1);
+    int* flt_data = static_cast<int*>(flt.data());
+    int* tmp_buffer;
+    tmp_buffer = new int[tmp_precomp_index_->NumElements()];
+    tmp_buffer[0] = 0;
+    for (int i = 0; i < this->tmp_precomp_index_->NumElements()-1;i++)
+        tmp_buffer[i+1] = kernel_size * (i+1);
+    CUDA_CHECK(cudaMemcpy(flt_data,tmp_buffer,this->tmp_precomp_index_->NumElements()*sizeof(Dtype), cudaMemcpyHostToDevice ));
+    delete[] tmp_buffer;
 
 }
 

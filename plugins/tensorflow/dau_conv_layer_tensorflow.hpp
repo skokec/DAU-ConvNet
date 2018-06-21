@@ -5,7 +5,6 @@
 #include <utility>
 #include <vector>
 
-//#include "caffe/layer.hpp"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/platform/default/logging.h"
@@ -13,7 +12,6 @@
 
 #include "dau_conv/base_dau_conv_layer.hpp"
 
-//#include "caffe/util/device_alternate.hpp"
 
 // we will be using base classes from DAUConvNet
 using DAUConvNet::DAUConvSettings;
@@ -84,18 +82,10 @@ protected:
 
 	// intermediate buffers when computing derivative kernels in precompute_guassian_weights_gpu
 	// temporary buffers for pre-computed sigma^2, sigma^3 and 1/2*sigma^2
-	//vector<Blob<Dtype>* > param_buffers_;
-	//vector<Blob<Dtype>* > kernels_buffers_;
-	
-	//dereference Tensor** ? ..
-	//vector<Tensor**> param_buffers_;
-	//vector<Tensor**> kernels_buffers_;
-
 	vector<Tensor*> param_buffers_;
 	vector<Tensor*> kernels_buffers_;
 
-
-	//Blob<int> tmp_precomp_index_;// pre-computed indexes for caffe_gpu_sum in get_kernels
+	// pre-computed indexes for caffe_gpu_sum in get_kernels
 	Tensor* tmp_precomp_index_ = NULL;
 	
 };
@@ -125,7 +115,7 @@ public:
 template <typename Dtype>
 class DAUKernelOutputGPU : public DAUKernelOutput<Dtype> {
 public:
-	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_;printf("Getting weight data\n"); auto dat = tmp_ten->flat<Dtype>().data();printf("Got flat\n"); return static_cast<Dtype*>(dat); }
+	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_error() { Tensor* tmp_ten = this->d_error_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_params() { Tensor* tmp_ten = this->d_params_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 };
@@ -257,20 +247,8 @@ protected:
 	virtual bool update_prefiltering_kernels(cudaStream_t stream);
 
 	// learnable parameters of size
-	/*virtual Dtype* param_w() { return is_data_on_gpu() ? param_buffer_w_->mutable_gpu_flat<Dtype>().data() : param_buffer_w_->mutable_cpu_flat<Dtype>().data(); }
-	virtual Dtype* param_mu1() { return is_data_on_gpu() ? param_buffer_mu1_->mutable_gpu_flat<Dtype>().data() : param_buffer_mu1_->mutable_cpu_flat<Dtype>().data(); }
-	virtual Dtype* param_mu2() { return is_data_on_gpu() ? param_buffer_mu2_->mutable_gpu_flat<Dtype>().data() : param_buffer_mu2_->mutable_cpu_flat<Dtype>().data(); }
-	virtual Dtype* param_sigma() { return is_data_on_gpu() ? param_buffer_sigma_->mutable_gpu_flat<Dtype>().data() : param_buffer_sigma_->mutable_cpu_flat<Dtype>().data(); }
-	virtual Dtype* param_bias() { return is_data_on_gpu() ? param_buffer_bias_->mutable_gpu_flat<Dtype>().data() : param_buffer_bias_->mutable_cpu_flat<Dtype>().data(); }
-	*/
 
-	virtual Dtype* param_w() { 
-		Tensor* tmp_ten = *(param_buffer_w_.get());		
-		auto tdat = tmp_ten -> flat<Dtype>();
-		auto dat = tdat.data();
-		Dtype* t_dat = static_cast<Dtype*>(dat);
-		return t_dat;
-	}
+	virtual Dtype* param_w() { Tensor* tmp_ten = *(param_buffer_w_.get()); auto t_flat = tmp_ten -> flat<Dtype>(); return static_cast<Dtype*>(t_flat.data()); }
 	virtual Dtype* param_mu1() { Tensor* tmp_ten = *param_buffer_mu1_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* param_mu2() { Tensor* tmp_ten = *param_buffer_mu2_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* param_sigma() { Tensor* tmp_ten = *param_buffer_sigma_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
@@ -290,14 +268,6 @@ protected:
 
 	// remaining intermediate/temporary buffers
 
-	/*	
-	virtual Dtype* temp_bwd_gradients() { return is_data_on_gpu() ? bwd_gradients_.mutable_gpu_flat<Dtype>().data() : bwd_gradients_.mutable_cpu_flat<Dtype>().data() ; }
-	virtual Dtype* temp_interm_buffer() { return is_data_on_gpu() ? interm_buffer_.mutable_gpu_flat<Dtype>().data() : interm_buffer_.mutable_cpu_flat<Dtype>().data() ; }
-	virtual Dtype* temp_param_buffer() { return is_data_on_gpu() ? tmp_param_buffer_.mutable_gpu_flat<Dtype>().data() : tmp_param_buffer_.mutable_cpu_flat<Dtype>().data() ; }
-	virtual Dtype* temp_col_buffer() { return is_data_on_gpu() ? col_buffer_.mutable_gpu_flat<Dtype>().data() : col_buffer_.mutable_cpu_flat<Dtype>().data() ; }
-	virtual Dtype* temp_bias_multiplier() { return is_data_on_gpu() ? bias_multiplier_.mutable_gpu_flat<Dtype>().data() : bias_multiplier_.mutable_cpu_flat<Dtype>().data() ; }
-	*/
-
 	virtual Dtype* temp_bwd_gradients() { auto dat = bwd_gradients_->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* temp_interm_buffer() { auto dat = interm_buffer_->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* temp_param_buffer() { auto dat = tmp_param_buffer_->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
@@ -311,19 +281,14 @@ protected:
 	virtual void deallocate_workspace_mem();
 
 	// accumulated gradients
-	//Blob<Dtype> bwd_gradients_;
 	Tensor* bwd_gradients_ = NULL;
 
 
 	// additional buffers
-	//Blob<Dtype> interm_buffer_; // GPU only
-	//Blob<Dtype> tmp_param_buffer_; // GPU and CPU
 	Tensor* interm_buffer_ = NULL; // GPU only
 	Tensor* tmp_param_buffer_ = NULL; // GPU and CPU
 
 
-	//Blob<Dtype> col_buffer_; // CPU only
-	//Blob<Dtype> bias_multiplier_; // GPU and CPU
 	Tensor* col_buffer_=NULL; // CPU only
 	Tensor* bias_multiplier_=NULL; // GPU and CPU
 
@@ -364,49 +329,5 @@ protected:
  * @tparam Dtype
  */
 
-/*
-template <typename Dtype>
-class DAUConvolutionLayer : public Layer<Dtype>{
-public:
-
-	explicit DAUConvolutionLayer(const LayerParameter& param, bool ignore_edge_gradients = false)
-	  : Layer<Dtype>(param), dau_compute(Caffe::cublas_handle(), ignore_edge_gradients) {}
-
-	virtual ~DAUConvolutionLayer();
-
-	virtual inline const char* type() const { return "DAUConvolutionLayer"; }
-
-	virtual inline int MinBottomBlobs() const { return 1; }
-	virtual inline int MinTopBlobs() const { return 1; }
-	virtual inline bool EqualNumBottomTopBlobs() const { return true; }
-
-    virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
-    virtual void Reshape(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
-
-	virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
-	virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top);
-	virtual void Backward_cpu(const vector<Blob<Dtype>*>& top, const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
-	virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
-
-protected:
-
-	virtual void compute_output_shape() { return dau_compute.compute_output_shape(); }
-	virtual inline bool reverse_dimensions() { return false; }
-
-private:
-	// compute obj and buffers (param and output) for our Gaussian kernel
-	// (we actually have only one kernel in buffer but data structure is general)
-	DAUKernelComputeGPU<Dtype> dau_kernel_compute;
-	DAUKernelParamsGPU<Dtype> dau_kernel_params;
-	DAUKernelOutputGPU<Dtype> dau_kernel_output;
-
-public:
-    // must be public only for testing reasons
-    DAUConvLayerTensorflowGPU<Dtype> dau_compute;
-};
-
-//*/ //DAUConvolutionLayer
-
-  // namespace caffe
 
 #endif  // CAFFE_DAU_CONV_LAYER_HPP_

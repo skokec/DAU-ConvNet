@@ -13,6 +13,21 @@ execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(' '.join(tf
 execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(tf.sysconfig.get_lib()+'/libtensorflow_framework.so',end='')" OUTPUT_VARIABLE TF_LIB)
 #TF_LFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_link_flags()))') )
 
+set(Tensorflow_INCLUDE_DIRS "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include")
+set(TF_LIB "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/libtensorflow_framework.so")
+set(TF_CFLAGS "-I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0")
+set(TF_LFLAGS "-L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework")
+
+#-- flags:  -std=c++11 -fPIC -Wall -Wno-sign-compare -Wno-uninitialized -std=c++11 -D GOOGLE_CUDA=1 -I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0
+#-- flags:  -L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework
+#-- LINKER LIBS: PUBLIC;/usr/local/cuda/lib64/libcudart.so;/usr/local/cuda/lib64/libcurand.so;/usr/local/cuda/lib64/libcublas.so;/usr/local/cuda/lib64/libcublas_device.a;PUBLIC;opencv_core;opencv_highgui;opencv_imgproc;opencv_imgcodecs;opencv_core;opencv_highgui;opencv_imgproc;opencv_imgcodecs;PUBLIC;/usr/lib/liblapack.so;/usr/lib/libcblas.so;/usr/lib/libatlas.so
+#-- INCLUDE DIRS: PUBLIC;/usr/local/cuda/include;PUBLIC;/usr/local/include;/usr/local/include/opencv;PUBLIC;/usr/include;/usr/include/atlas
+#-- INCLUDE DIR: /home/vitjan/Documents/5.letnik/gauss_conv/new_impl/VitjanZ/DAU-ConvNet/include
+#-- TENSORFLOW DIRS: /home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include
+#-- TENSORFLOW LIB: /home/vitjan/.local/lib/python3.5/site-packages/tensorflow/libtensorflow_framework.so
+#-- tf link flags: -L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework
+#-- tf compiler flags: -I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0
+
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D GOOGLE_CUDA=1")
@@ -44,6 +59,8 @@ include(cmake/Dependencies.cmake)
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TF_LFLAGS}")
 message(STATUS "flags: ${CMAKE_CXX_FLAGS}")
 message(STATUS "flags: ${CMAKE_SHARED_LINKER_FLAGS}")
+message(STATUS "tf link flags: ${TF_LFLAGS}")
+message(STATUS "tf compiler flags: ${TF_CFLAGS}")
 
 
 
@@ -65,7 +82,7 @@ message(STATUS "TENSORFLOW LIB: ${TF_LIB}")
 # to register it
 #LAYER ADD LIBRARY
 #LINK_DIRECTORIES(${TF_LIB})
-#include_directories(${Tensorflow_INCLUDE_DIRS})
+include_directories(${Tensorflow_INCLUDE_DIRS})
 include_directories(/home/vitjan/Documents/5.letnik/gauss_conv/nsync/public)
 add_library(dau_conv_tensorflow SHARED dau_conv_layer_tensorflow.cpp dau_conv_layer_tensorflow.hpp)
 
@@ -105,7 +122,7 @@ add_library(base_op SHARED base_op.cpp)
 #target_link_libraries(base_op ${DAUConvNet_LINKER_LIBS} ${TF_LIB} dau_conv_tensorflow)
 target_link_libraries(base_op dau_conv_tensorflow)
 target_include_directories(base_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-#target_include_directories(base_op PUBLIC "/usr/local/")
+target_include_directories(base_op PUBLIC "/usr/local/")
 target_include_directories(base_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
 #target_include_directories(base_op PUBLIC ${DAUConvNet_INCLUDE_DIR})
