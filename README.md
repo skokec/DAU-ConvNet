@@ -1,7 +1,7 @@
 # DAU-ConvNet
-Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper "Spatially-Adaptive Filter Units for Deep Neural Networks"
+Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper titled "Spatially-Adaptive Filter Units for Deep Neural Networks"
 
-This code is indepentend of any deep learning framework and can be used to generate a library for any framework.
+Self-contained DAU layer implementation (C++ and CUDA). Use this library to implement DAU layers in any deep learning frameworks.
 
 ## Caffe ##
 We currently provide a Caffe implementation based on this code in https://github.com/skokec/DAU-ConvNet-caffe
