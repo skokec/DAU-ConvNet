@@ -117,6 +117,7 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
     for(int dm: shape){
       tmp_shape.AddDim(dm);
     }
+
     Dtype* w_data = this->param_w();
     Dtype* mu1_data = this->param_mu1();
     Dtype* mu2_data = this->param_mu2();
@@ -410,7 +411,6 @@ DAUKernelCompute<Dtype>::~DAUKernelCompute(){
 
 template <typename Dtype>
 void DAUKernelCompute<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w){
-    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
     this->num_in_channels = num_in_channels;
     this->num_out_channels = num_out_channels;
@@ -418,53 +418,41 @@ void DAUKernelCompute<Dtype>::reshape(int num_in_channels, int num_out_channels,
     this->kernel_h = kernel_h;
     this->kernel_w = kernel_w;
     // allocate and prepare temporary buffers for kernels
-    if (this->kernels_buffers_.size() != 5) {
+    // removed copyFrom, always allocates new memory
+    for (int i = 0; i < this->kernels_buffers_.size(); i++)
+        delete this->kernels_buffers_[i];
 
-        for (int i = 0; i < this->kernels_buffers_.size(); i++)
-            delete this->kernels_buffers_[i];
-
-        this->kernels_buffers_.resize(5);
-        for (int i = 0; i < 5; i++){
-            Tensor* ker_buff_ten = new Tensor();
-            Tensor& tmp_ten = *ker_buff_ten;
-            if(this->context_ == NULL)printf("Context is null\n");
-            OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss, num_out_channels, kernel_h*kernel_w}), &tmp_ten));
-
-            this->kernels_buffers_[i] = &tmp_ten;
-        }
-
-
-    }else{
-        for (int i = 0; i < 5; i++){
-            //this->kernels_buffers_[i] = this->kernels_buffers_[i]->template shaped <Dtype,4>({num_in_channels, num_gauss, num_out_channels, kernel_h * kernel_w});
-            bool correct_copy = this->kernels_buffers_[i]->CopyFrom(*this->kernels_buffers_[i],TensorShape({num_in_channels, num_gauss, num_out_channels, kernel_h * kernel_w}));
-            
-            if(!correct_copy) printf("Failed reshape kernelCompute\n");
-        }
+    this->kernels_buffers_.resize(5);
+    for (int i = 0; i < 5; i++){
+        Tensor* ker_buff_ten = new Tensor();
+        Tensor& tmp_ten = *ker_buff_ten;
+        if(this->context_ == NULL)printf("Context is null\n");
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss, num_out_channels, kernel_h*kernel_w}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->kernels_buffers_[i] = &tmp_ten;
     }
+
+
+
 
     //for (int i = 0; i < 5; ++i)
     //    this->kernels_buffers_[i]->Reshape(num_in_channels, num_gauss, num_out_channels, kernel_h * kernel_w);
 
     // allocate and prepare temporary buffers for parameters
-    if (this->param_buffers_.size() != 7){
-        for (int i = 0; i < this->param_buffers_.size(); i++)
-            delete this->param_buffers_[i];
+    for (int i = 0; i < this->param_buffers_.size(); i++)
+        delete this->param_buffers_[i];
 
-        this->param_buffers_.resize(7);
-        for (int i = 0; i < 7; i++){
-            //this->param_buffers_[i] = new Blob<Dtype>();
-            Tensor* par_buf_ten = new Tensor();
-            Tensor& tmp_ten = *par_buf_ten;
-            OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1, num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
-            this->param_buffers_[i] = &tmp_ten;
-        }
-    }else{
-        for (int i = 0; i < 7; i++){
-            //this->param_buffers_[i] = this->param_buffers_[i]->template shaped<Dtype,4>({1, num_in_channels, num_gauss, num_out_channels});
-            bool correct_copy = this->param_buffers_[i]->CopyFrom(*this->param_buffers_[i],TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
-        }
-
+    this->param_buffers_.resize(7);
+    for (int i = 0; i < 7; i++){
+        Tensor* par_buf_ten = new Tensor();
+        Tensor& tmp_ten = *par_buf_ten;
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1, num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->param_buffers_[i] = &tmp_ten;
     }
 
     // pre-computed offset indexes for batched sums (when using caffe_gpu_sum)
@@ -483,98 +471,104 @@ void DAUKernelParams<Dtype>::initialize_params(Tensor w, Tensor mu1, Tensor mu2,
 
 template <typename Dtype>
 void DAUKernelParams<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss) {
-    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
     Tensor* weight_ten = new Tensor();
     Tensor* sigma_ten = new Tensor();
     Tensor* mu1_ten = new Tensor();
     Tensor* mu2_ten = new Tensor();
+    int reshape_total_elements = num_in_channels*num_out_channels*num_gauss;
     
-    //SHARED_PTR CAUSES ERRORS
-    if (this->weight_ == false){
-        //this->weight_.reset(new Blob<Dtype>());
+    if ((*this->weight_)->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *weight_ten;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
-        this->weight_.reset(&weight_ten);
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->weight_.reset();
+        this->weight_ = make_shared<Tensor*>(weight_ten);
     }else{
-        //this->weight_ = this->weight_->template shaped<Dtype,4>({1, num_in_channels, num_gauss, num_out_channels});
-        //this->weight_->CopyFrom(*this->weight_,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
         Tensor* tmp_ten = *(this->weight_);
         bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
         if(!correct_copy) printf("Failed reshape kernelParams\n");
-
-
     }
-    if (this->mu1_ == false){
-        //this->mu1_.reset(new Blob<Dtype>());
+    if ((*this->mu1_)->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *mu1_ten;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
-        this->mu1_.reset(&mu1_ten);
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->mu1_.reset();
+        this->mu1_ = make_shared<Tensor*>(mu1_ten);
     }else{
-        //this->mu1_ = this->mu1_->template shaped<Dtype,4>({1, num_in_channels, num_gauss, num_out_channels});
+
         Tensor* tmp_ten = *this->mu1_;
         bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
         if(!correct_copy) printf("Failed reshape kernelParams\n");
 
     }
-    if (this->mu2_ == false){
-        //this->mu2_.reset(new Blob<Dtype>());
+    if ((*this->mu2_)->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *mu2_ten;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
-
-        this->mu2_.reset(&mu2_ten);
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->mu2_.reset();
+        this->mu2_ = make_shared<Tensor*>(mu2_ten);
     }else{
-        //this->mu2_ = this->mu2_->template shaped<Dtype,4>({1, num_in_channels, num_gauss, num_out_channels});       
         Tensor* tmp_ten = *this->mu2_;
         bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
         if(!correct_copy) printf("Failed reshape kernelParams\n");
 
     }
-    if (this->sigma_ == false){
-        //this->sigma_.reset(new Blob<Dtype>());
+    if ((*this->sigma_)->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *sigma_ten;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
+        this->sigma_.reset();
+        this->sigma_ = make_shared<Tensor*>(sigma_ten);
 
-        this->sigma_.reset(&sigma_ten);
     }else{
-        //this->sigma_ = this->sigma_->template shaped<Dtype,4>({1, num_in_channels, num_gauss, num_out_channels});
         Tensor* tmp_ten = *this->sigma_;
         bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
         if(!correct_copy) printf("Failed reshape kernelParams\n");
-
     }
 
-    /*
-    this->weight_->Reshape(1, num_in_channels, num_gauss, num_out_channels);
-    this->mu1_->Reshape(1,num_in_channels, num_gauss, num_out_channels);
-    this->mu2_->Reshape(1,num_in_channels, num_gauss, num_out_channels);
-    this->sigma_->Reshape(1,num_in_channels, num_gauss, num_out_channels);
-    */
 }
 
 template <typename Dtype>
 void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w) {
-    //TODO REPLACE CopyFrom with tensor allocation and memcpy
 
-    //this->weight_.Reshape(num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w);
     Tensor* tmp_weight = new Tensor();
     Tensor* tmp_error = new Tensor();
     Tensor* tmp_params = new Tensor();
+    int reshape_total_elements = num_in_channels * num_out_channels * num_gauss * kernel_h * kernel_w;
     
-    
-    if(this->weight_ == NULL){
+    if(this->weight_ == NULL || this->weight_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_weight;
+        printf("Deleting d_weight \n");
+        delete this->weight_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
         this->weight_=&tmp_ten;
+
 
     }else{
         bool correct_copy = this->weight_->CopyFrom(*this->weight_, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}));
         if(!correct_copy) printf("Failed reshape kernelOutput\n");
     }
 
-    if(this->d_error_ == NULL){
+    if(this->d_error_ == NULL || this->d_error_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_error;
+        printf("Deleting d_error \n");
+        delete this->d_error_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
         this->d_error_=&tmp_ten;
 
     }else{
@@ -582,9 +576,15 @@ void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, 
         if(!correct_copy) printf("Failed reshape kernelOutput\n");
     }
 
-    if(this->d_params_ == NULL){
+    if(this->d_params_ == NULL || this->d_params_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_params;
+        printf("Deleting d_params \n");
+        delete this->d_params_;
+
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
+        Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
+        cudaError_t cuda_error_w = cudaMemset(tmp_buf,0, sizeof(Dtype)*tmp_ten.NumElements());
+        if(cuda_error_w != cudaSuccess) printf("Cuda error reshape params %d \n", cuda_error_w);
         this->d_params_=&tmp_ten;
 
     }else{
@@ -613,12 +613,9 @@ template void DAUKernelOutput<double>::reshape(int num_in_channels, int num_out_
 template <typename Dtype>
 void DAUKernelCompute<Dtype>::create_precompute_index(const int index_size, const int kernel_size) {
 
-    //TODO REPLACE CopyFrom with tensor allocation and memcpy
-    //tmp_precomp_index_.Reshape(1, 1, 1, index_size + 1);
-    //tmp_precomp_index_ = tmp_precomp_index_->template shaped<Dtype,4>({1, 1, 1, index_size + 1});
     Tensor* precompute_tensor = new Tensor();
     Tensor& tmp_ten = *precompute_tensor;
-    if(!this->tmp_precomp_index_){
+    if(!this->tmp_precomp_index_ || this->tmp_precomp_index_->NumElements() != index_size+1){
 
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_INT32, TensorShape({1, 1, 1,index_size + 1}), &tmp_ten));
         this->tmp_precomp_index_=&tmp_ten;

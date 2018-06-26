@@ -41,6 +41,7 @@ class baseOpOpTest(unittest.TestCase):
                 sigma_rand = np.random.rand(1,32,4,64)
                 print("Prepared variables")
                 result = base_op_module.base_op(x_rand, W_rand, mu1_rand, mu2_rand, sigma_rand).eval()
+                print(result.shape)
                 #np.testing.assert_array_equal(result, result_rand)
 
                   

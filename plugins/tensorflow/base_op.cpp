@@ -132,8 +132,8 @@ public:
         Tensor param_mu2;
         Tensor param_sigma;
         // TODO: fix reshape so it doesn't use copyFrom..
-        //TensorShape param_shape({1, input.shape().dim_size(1), weights.shape().dim_size(1), weights.shape().dim_size(3)});
-        TensorShape param_shape({1,1,1,1});
+        TensorShape param_shape({1, input.shape().dim_size(1), weights.shape().dim_size(1), weights.shape().dim_size(3)});
+        //TensorShape param_shape({1,1,1,1});
         OP_REQUIRES_OK(context, context->allocate_temp(weights.dtype(),param_shape,&param_w));
         OP_REQUIRES_OK(context, context->allocate_temp(mu1.dtype(),param_shape,&param_mu1));
         OP_REQUIRES_OK(context, context->allocate_temp(mu2.dtype(),param_shape,&param_mu2));
