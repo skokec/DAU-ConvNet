@@ -7,13 +7,13 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import sparse_ops
 
 print(os.getcwd())
-base_op_grad_module = tf.load_op_library('./bin/libbase_op_grad.so')
+base_op_grad_module = tf.load_op_library('../../cmake-build-debug/plugins/tensorflow/libbase_op_grad.so')
 
 @ops.RegisterGradient("BaseOp")
 def _base_op_grad_cc(op, grad):
 
     print("test")
-    return base_op_grad_module.base_op_grad(grad, op.inputs[0], op.inputs[1])
+    return base_op_grad_module.base_op_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4])
 
 # python impl.
 #@ops.RegisterGradient("BaseOp")

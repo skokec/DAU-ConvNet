@@ -106,13 +106,16 @@ target_link_libraries(dau_conv_tensorflow ${TF_LIB} dau-conv)
 # build the actual operation which can be used directory
 
 add_library(base_op_grad SHARED base_op_grad.cpp)
-
-target_link_libraries(base_op_grad ${DAUConvNet_LINKER_LIBS})
-
 #target_include_directories(base_op_grad PRIVATE "../../include/")
 #target_include_directories(base_op_grad PUBLIC "/home/vitjan/Documents/5.letnik/gauss_conv/nsync/public")
-target_include_directories(base_op_grad PUBLIC ${Tensorflow_INCLUDE_DIRS})
-target_include_directories(base_op_grad PUBLIC ${DAUConvNet_INCLUDE_DIR})
+target_link_libraries(base_op_grad dau_conv_tensorflow)
+target_link_libraries(base_op_grad ${DAUConvNet_LINKER_LIBS})
+target_include_directories(base_op_grad PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(base_op_grad PUBLIC "/usr/local/")
+target_include_directories(base_op_grad ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
+
+#target_include_directories(base_op_grad PUBLIC ${Tensorflow_INCLUDE_DIRS})
+#target_include_directories(base_op_grad PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
 
 

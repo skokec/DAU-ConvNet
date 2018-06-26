@@ -46,21 +46,21 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& sett
 
 
     //if(this->param_buffer_w_ == NULL) printf("shared_ptr is NULL\n");
-    this->param_buffer_w_ = make_shared<Tensor*>(w);
+    this->param_buffer_w_ = make_shared<const Tensor*>(w);
     //if(this->param_buffer_w_ != NULL) printf("shared_ptr is not NULL\n");
 
     
-    this->param_buffer_mu1_ = make_shared<Tensor* >(mu1);
+    this->param_buffer_mu1_ = make_shared<const Tensor* >(mu1);
 
-    this->param_buffer_mu2_ = make_shared<Tensor* >(mu2);
+    this->param_buffer_mu2_ = make_shared<const Tensor* >(mu2);
 
-    this->param_buffer_sigma_ = make_shared<Tensor* >(sigma);
+    this->param_buffer_sigma_ = make_shared<const Tensor* >(sigma);
 
     if(settings.bias_term){
         Tensor* bias_temp = new Tensor();
         Tensor& tmp_ten = *bias_temp;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w->shape(), &tmp_ten));
-        this->param_buffer_bias_ = make_shared<Tensor*>(bias_temp);    
+        this->param_buffer_bias_ = make_shared<const Tensor*>(bias_temp);
     }
     
 }
@@ -90,6 +90,7 @@ DAUConvLayerTensorflowGPU<Dtype>::~DAUConvLayerTensorflowGPU(){
 template <typename Dtype>
 void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
     // deallocate existing workspace memory
+    //TODO Use tensorflow to allocate memory..
     deallocate_workspace_mem();
     cudaError_t err = cudaMalloc(&(this->own_workspace_data), bytes);
     if (err != cudaSuccess) {
@@ -124,20 +125,20 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
     Dtype* sigma_data = this->param_sigma();
 
 
-    Tensor* orig_ten_w = *(this->param_buffer_w_);
+    Tensor* orig_ten_w = (Tensor*) *(this->param_buffer_w_);
 
     bool correct_copy = orig_ten_w->CopyFrom(*orig_ten_w,tmp_shape);
 
     if(!correct_copy) printf("Failed reshape params\n");
-    Tensor* orig_ten_mu1 = *(this->param_buffer_mu1_);
+    Tensor* orig_ten_mu1 = (Tensor*) *(this->param_buffer_mu1_);
     correct_copy = orig_ten_mu1->CopyFrom(*orig_ten_mu1,tmp_shape);
     if(!correct_copy) printf("Failed reshape params\n");
 
-    Tensor* orig_ten_mu2 = *(this->param_buffer_mu2_);
+    Tensor* orig_ten_mu2 = (Tensor*) *(this->param_buffer_mu2_);
     correct_copy = orig_ten_mu2->CopyFrom(*orig_ten_mu2,tmp_shape);
     if(!correct_copy) printf("Failed reshape params\n");
 
-    Tensor* orig_ten_sigma = *(this->param_buffer_sigma_);
+    Tensor* orig_ten_sigma = (Tensor*) *(this->param_buffer_sigma_);
     correct_copy = orig_ten_sigma->CopyFrom(*orig_ten_sigma,tmp_shape);
     if(!correct_copy) printf("Failed reshape params\n");
 
@@ -145,7 +146,7 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
 
     // If necessary, initialize the biases.
     if (this->bias_term_) {
-        Tensor* orig_ten_bias = *(this->param_buffer_bias_);
+        Tensor* orig_ten_bias = (Tensor*) *(this->param_buffer_bias_);
         correct_copy = orig_ten_bias->CopyFrom(*orig_ten_bias,tmp_shape);
         if(!correct_copy) printf("Failed reshape params bias\n");
 
@@ -168,7 +169,7 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
 
 
     // we use actual (learnable) sigma parameter when computing kernels so connect that param with the sigma for aggregation
-    static_cast<DAUKernelParamsGPU<Dtype>* >(kernel_param)->sigma_ = this->param_buffer_sigma_;
+    static_cast<DAUKernelParamsGPU<Dtype>* >(kernel_param)->sigma_ = make_shared<Tensor*>((Tensor*)(*this->param_buffer_sigma_));
     
 }
 
@@ -196,7 +197,6 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
             this->bias_multiplier_ = &tmp_ten;
         }else{
         vector<int> bias_multiplier_shape(1, this->height_out_ * this->width_out_);
-        //maybe this is better -- can we even copy the same tensor with no segfault?..
         bool correct_copy = this->bias_multiplier_->CopyFrom(*this->bias_multiplier_,TensorShape({1,this->height_out_*this->width_out_}));
         if(!correct_copy) printf("Failed reshape layerTensorflowGPU\n");            
         }
@@ -204,15 +204,12 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         auto flt = this->bias_multiplier_->template flat<Dtype>();
         auto dat = flt.data();
         Dtype* bias_data = static_cast<Dtype*>(dat);
-        const int num_el = this->bias_multiplier_->NumElements();
-        //caffe_set(num_el, Dtype(1), bias_data);
-        //memset(bias_data,Dtype(1),sizeof(Dtype) * num_el);
+        const long long int num_el = this->bias_multiplier_->NumElements();
         CUDA_CHECK(cudaMemset(bias_data,Dtype(1), sizeof(Dtype)*num_el));
 
     }
 
     // make sure col_buffer is big enough
-    //this->col_buffer_.Reshape(this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_);
     Tensor* col_buffer_ten = new Tensor();
     Tensor* interm_buffer_ten = new Tensor();
     Tensor* bwd_gradients_ten = new Tensor();
@@ -226,7 +223,6 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         }
         auto tmp_flt = tmp_ten.flat<Dtype>();
         Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
-        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
         CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
 
         this->col_buffer_= &tmp_ten;
@@ -247,7 +243,6 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
         auto tmp_flt = tmp_ten.flat<Dtype>();
         Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
-        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
         CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
         this->interm_buffer_= &tmp_ten;
 
@@ -267,7 +262,6 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         }
         auto tmp_flt = tmp_ten.flat<Dtype>();
         Dtype* tmp_data = static_cast<Dtype*>(tmp_flt.data());
-        //for(int i = 0; i < tmp_data.size(); i++) tmp_data(i) = 1.0;
         CUDA_CHECK(cudaMemset(tmp_data,Dtype(1.0), sizeof(Dtype)*tmp_ten.NumElements()));
 
 
@@ -295,11 +289,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         if(!correct_copy) printf("Failed reshape layerTensorflowGPU\n");
     }
 
-    //this->interm_buffer_.Reshape(this->batch_num_, std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_), max_height, max_width);
 
-    //this->bwd_gradients_.Reshape(this->NUM_K, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_);
-
-    
     
     return new_top_shape;
 
@@ -547,7 +537,6 @@ void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, 
     
     if(this->weight_ == NULL || this->weight_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_weight;
-        printf("Deleting d_weight \n");
         delete this->weight_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
         Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
@@ -563,7 +552,6 @@ void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, 
 
     if(this->d_error_ == NULL || this->d_error_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_error;
-        printf("Deleting d_error \n");
         delete this->d_error_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
         Dtype* tmp_buf = static_cast<Dtype*>(tmp_ten.flat<Dtype>().data());
@@ -578,7 +566,6 @@ void DAUKernelOutput<Dtype>::reshape(int num_in_channels, int num_out_channels, 
 
     if(this->d_params_ == NULL || this->d_params_->NumElements() != reshape_total_elements){
         Tensor& tmp_ten = *tmp_params;
-        printf("Deleting d_params \n");
         delete this->d_params_;
 
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), &tmp_ten));
