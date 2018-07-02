@@ -18,32 +18,28 @@ using namespace std;
 
 using namespace tensorflow;
 
+template <typename Dtype>
+void DAUConvLayerTensorflowGPU<Dtype>::InitializeGrad(DAUConvSettings& settings, Tensor* w_grad, Tensor* mu1_grad, Tensor* mu2_grad, Tensor* sigma_grad){
+
+    this->param_buffer_w_grad = make_shared<const Tensor*>(w_grad);
+    this->param_buffer_mu1_grad = make_shared<const Tensor* >(mu1_grad);
+    this->param_buffer_mu2_grad = make_shared<const Tensor* >(mu2_grad);
+    this->param_buffer_sigma_grad = make_shared<const Tensor* >(sigma_grad);
+
+    if(settings.bias_term){
+        Tensor* bias_temp = new Tensor();
+        Tensor& tmp_ten = *bias_temp;
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w_grad->shape(), &tmp_ten));
+        this->param_buffer_bias_grad = make_shared<const Tensor*>(bias_temp);
+    }
+
+
+}
+
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma){
     //Set the layer parameters from input tensors
-
-    settings.offsets_already_centered = true;
-
-    settings.num_output = 64;
-    //num units per X and per Y
-    settings.number_units.push_back(2);
-    settings.number_units.push_back(2);
-    settings.bias_term = true;
-    settings.kernel_size = 9;
-    settings.pad = 4;
-    settings.stride = 1;
-    settings.unit_normalization = true;
-    settings.square_unit_normalization = true;
-    settings.mean_iteration_step = 1;
-    settings.sigma_iteration_step = 1;
-    settings.component_border_bound = 4;
-    settings.sigma_lower_bound = 0.3;
-    settings.merge_iteration_step = 0;
-    settings.merge_threshold = 1;
-
-
-
 
     //if(this->param_buffer_w_ == NULL) printf("shared_ptr is NULL\n");
     this->param_buffer_w_ = make_shared<const Tensor*>(w);

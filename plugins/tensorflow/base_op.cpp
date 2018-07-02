@@ -15,6 +15,25 @@ using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
 
+/*
+     settings.num_output = 64;
+    //num units per X and per Y
+    settings.number_units.push_back(2);
+    settings.number_units.push_back(2);
+    settings.bias_term = true;
+    settings.kernel_size = 9;
+    settings.pad = 4;
+    settings.stride = 1;
+    settings.unit_normalization = true;
+    settings.square_unit_normalization = true;
+    settings.mean_iteration_step = 1;
+    settings.sigma_iteration_step = 1;
+    settings.component_border_bound = 4;
+    settings.sigma_lower_bound = 0.3;
+    settings.merge_iteration_step = 0;
+    settings.merge_threshold = 1;
+ */
+
 //initialize with w, mu1, mu2, sigma
 REGISTER_OP("BaseOp")
         .Input("input: float")
@@ -22,7 +41,22 @@ REGISTER_OP("BaseOp")
         .Input("mu1: float")
         .Input("mu2: float")
         .Input("sigma: float")
-        .Output("inner_product: float");
+        .Output("output: float")
+        .Attr("offsets_already_centered : bool = true")
+        .Attr("number_units_x : int  = 2")
+        .Attr("number_units_y : int = 2")
+        .Attr("bias_term: bool = true")
+        .Attr("kernel_size: int = 9")
+        .Attr("pad: int = 4")
+        .Attr("stride: int = 1")
+        .Attr("unit_normalization: bool = true")
+        .Attr("square_unit_normalization: bool = true")
+        .Attr("mean_iteration_step: int = 1")
+        .Attr("sigma_iteration_step: int = 1")
+        .Attr("component_border_bound: int = 4")
+        .Attr("sigma_lower_bound: float = 0.3")
+        .Attr("merge_iteration_step: int = 0")
+        .Attr("merge_threshold: int = 1");
 /*.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
@@ -41,11 +75,59 @@ REGISTER_OP("BaseOp")
   return Status::OK();
 });*/
 
-// D is device
 template <typename Device, typename Dtype>
 class BaseOpOp : public OpKernel {
 public:
     explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
+        bool offsets_already_centered;
+        int number_units_x;
+        int number_units_y;
+        bool bias_term;
+        int kernel_size;
+        int pad;
+        int stride;
+        bool unit_normalization;
+        bool square_unit_normalization;
+        int mean_iteration_step;
+        int sigma_iteration_step;
+        int component_border_bound;
+        float sigma_lower_bound;
+        int merge_iteration_step;
+        int merge_threshold;
+        OP_REQUIRES_OK(context, context->GetAttr("offsets_already_centered", &offsets_already_centered));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
+        OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
+        OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
+        OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
+        OP_REQUIRES_OK(context, context->GetAttr("stride", &stride));
+        OP_REQUIRES_OK(context, context->GetAttr("unit_normalization", &unit_normalization));
+        OP_REQUIRES_OK(context, context->GetAttr("square_unit_normalization", &square_unit_normalization));
+        OP_REQUIRES_OK(context, context->GetAttr("mean_iteration_step", &mean_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("sigma_iteration_step", &sigma_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("component_border_bound", &component_border_bound));
+        OP_REQUIRES_OK(context, context->GetAttr("sigma_lower_bound", &sigma_lower_bound));
+        OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
+
+        dau_conv_settings.offsets_already_centered = offsets_already_centered;
+        //TODO calculate from inputs
+        dau_conv_settings.num_output = 64;
+        //num units per X and per Y
+        dau_conv_settings.number_units.push_back(number_units_x);
+        dau_conv_settings.number_units.push_back(number_units_y);
+        dau_conv_settings.bias_term = bias_term;
+        dau_conv_settings.kernel_size = kernel_size;
+        dau_conv_settings.pad = pad;
+        dau_conv_settings.stride = stride;
+        dau_conv_settings.unit_normalization = unit_normalization;
+        dau_conv_settings.square_unit_normalization = square_unit_normalization;
+        dau_conv_settings.mean_iteration_step = mean_iteration_step;
+        dau_conv_settings.sigma_iteration_step = sigma_iteration_step;
+        dau_conv_settings.component_border_bound = component_border_bound;
+        dau_conv_settings.sigma_lower_bound = sigma_lower_bound;
+        dau_conv_settings.merge_iteration_step = merge_iteration_step;
+        dau_conv_settings.merge_threshold = merge_threshold;
 
     }
 
@@ -61,11 +143,16 @@ public:
 
         DCHECK_EQ(5, context->num_inputs());
 
-        const Tensor& input = context->input(0);
-        const Tensor& weights = context->input(1);
-        const Tensor& mu1 = context->input(2);
-        const Tensor& mu2 = context->input(3);
-        const Tensor& sigma = context->input(4);
+        const Tensor* input;
+        context->input("input", &input);
+        const Tensor* weights;
+        context->input("weights",&weights);
+        const Tensor* mu1;
+        context->input("mu1",&mu1);
+        const Tensor* mu2;
+        context->input("mu2",&mu2);
+        const Tensor* sigma;
+        context->input("sigma",&sigma);
 
 
 
@@ -74,12 +161,12 @@ public:
         Tensor param_mu1;
         Tensor param_mu2;
         Tensor param_sigma;
-        TensorShape param_shape({1, input.shape().dim_size(1), weights.shape().dim_size(1), weights.shape().dim_size(3)});
+        TensorShape param_shape({1, input->shape().dim_size(1), weights->shape().dim_size(1), weights->shape().dim_size(3)});
         //TensorShape param_shape({1,1,1,1});
-        OP_REQUIRES_OK(context, context->allocate_temp(weights.dtype(),param_shape,&param_w));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu1.dtype(),param_shape,&param_mu1));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu2.dtype(),param_shape,&param_mu2));
-        OP_REQUIRES_OK(context, context->allocate_temp(sigma.dtype(),param_shape,&param_sigma));
+        OP_REQUIRES_OK(context, context->allocate_temp(weights->dtype(),param_shape,&param_w));
+        OP_REQUIRES_OK(context, context->allocate_temp(mu1->dtype(),param_shape,&param_mu1));
+        OP_REQUIRES_OK(context, context->allocate_temp(mu2->dtype(),param_shape,&param_mu2));
+        OP_REQUIRES_OK(context, context->allocate_temp(sigma->dtype(),param_shape,&param_sigma));
 
         Dtype* param_w_buf = static_cast<Dtype*>(param_w.flat<Dtype>().data());
         cudaError_t cuda_error_w = cudaMemset(param_w_buf,0, sizeof(Dtype)*param_w.NumElements());
@@ -92,15 +179,15 @@ public:
         CUDA_CHECK(cudaMemset(param_sigma_buf,0, sizeof(Dtype)*param_sigma.NumElements()));
 
 
-        const TensorShape& input_shape = input.shape();
-        const TensorShape& weights_shape = weights.shape();
+        const TensorShape& input_shape = input->shape();
+        const TensorShape& weights_shape = weights->shape();
 
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
         DAUComponentInitializerTensorflow<Dtype> param_initializer(1,1,1);
 
-        DAUConvNet::DAUConvSettings dau_conv_settings;
+        //DAUConvNet::DAUConvSettings dau_conv_settings;
         DAUKernelComputeGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsGPU<Dtype>* dau_kernel_params = new DAUKernelParamsGPU<Dtype>();
         dau_kernel_params->context_ = context;
@@ -131,14 +218,14 @@ public:
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) &weights,(Tensor*) &mu1,(Tensor*) &mu2,(Tensor*) &sigma);
+        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,dau_kernel_output, bottom_shape, in_train);
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(weights.dim_size(1));
+        top_shape.push_back(weights->dim_size(1));
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
@@ -154,12 +241,15 @@ public:
         auto out_data = output->flat<Dtype>();
         Dtype* top_data = static_cast<Dtype*>(out_data.data());
 
-        auto input_data = input.flat<Dtype>();
+        auto input_data = input->flat<Dtype>();
         const Dtype* bottom_data = static_cast<const Dtype*>(input_data.data());
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
     }
+private:
+    DAUConvNet::DAUConvSettings dau_conv_settings;
+
 };
 
 #define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);

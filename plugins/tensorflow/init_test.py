@@ -18,13 +18,51 @@ class baseOpOpTest(unittest.TestCase):
             self.assertEqual(result[0], 5)
             self.assertEqual(result[1], 11)
     """
+    def test_baseOpRandom_Grad(self):
+        with tf.Session('') as sess:
+            n = 4
+            m = 5
+            print("BASE OP RANDOM GRAD TEST")
+            x = tf.placeholder(tf.float32, shape = (16,32,64,64))
+            W = tf.placeholder(tf.float32, shape = (1,32,4,64))
+            mu1 = tf.placeholder(tf.float32, shape = (1,32,4,64))
+            mu2 = tf.placeholder(tf.float32, shape = (1,32,4,64))
+            sigma = tf.placeholder(tf.float32, shape = (1,32,4,64))
+            res_base_op = base_op_module.base_op(x, W, mu1, mu2, sigma)
+            grad_x_base_op = tf.gradients(res_base_op, [x, W, mu1, mu2, sigma])
+
+
+            for i in range(5):
+                #x_rand = np.random.randint(10, size = (n, 1))
+                #W_rand = np.random.randint(10, size = (m, n))
+                #result_rand = np.dot(W_rand, x_rand)
+                #  .Input("weights: float")
+                #  .Input("mu1: float")
+                #  .Input("mu2: float")
+                #  .Input("sigma: float")
+
+                #nchw
+                x_rand = np.random.rand(16,32,64,64)
+                #1,conv_in_channels_ == from input, units_per_channel, conv_out_channels_==num filters
+                W_rand = np.random.rand(1,32,4,64)
+                mu1_rand = np.random.rand(1,32,4,64)
+                mu2_rand = np.random.rand(1,32,4,64)
+                sigma_rand = np.random.rand(1,32,4,64)
+
+                t_start = time.time()
+                gradient_base_op = sess.run(grad_x_base_op, feed_dict = {x: x_rand, W: W_rand, mu1: mu1_rand, mu2: mu2_rand, sigma: sigma_rand})
+                t_end = time.time()
+                print(t_end-t_start)
+                #print(len(gradient_base_op))
+            #np.testing.assert_array_equal(result, result_rand)
+
 
     def test_baseOpRandom(self):
         with tf.Session(''):
             n = 4
             m = 5
-            
-            for i in range(30):
+            print("BASE OP RANDOM TEST")
+            for i in range(5):
                 #x_rand = np.random.randint(10, size = (n, 1))
                 #W_rand = np.random.randint(10, size = (m, n))
                 #result_rand = np.dot(W_rand, x_rand)
