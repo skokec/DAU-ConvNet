@@ -42,6 +42,7 @@ REGISTER_OP("BaseOp")
         .Input("mu2: float")
         .Input("sigma: float")
         .Output("output: float")
+        .Attr("offsets_already_centered : bool = true")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
         .Attr("bias_term: bool = true")
@@ -78,6 +79,55 @@ template <typename Device, typename Dtype>
 class BaseOpOp : public OpKernel {
 public:
     explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
+        bool offsets_already_centered;
+        int number_units_x;
+        int number_units_y;
+        bool bias_term;
+        int kernel_size;
+        int pad;
+        int stride;
+        bool unit_normalization;
+        bool square_unit_normalization;
+        int mean_iteration_step;
+        int sigma_iteration_step;
+        int component_border_bound;
+        float sigma_lower_bound;
+        int merge_iteration_step;
+        int merge_threshold;
+        OP_REQUIRES_OK(context, context->GetAttr("offsets_already_centered", &offsets_already_centered));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
+        OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
+        OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
+        OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
+        OP_REQUIRES_OK(context, context->GetAttr("stride", &stride));
+        OP_REQUIRES_OK(context, context->GetAttr("unit_normalization", &unit_normalization));
+        OP_REQUIRES_OK(context, context->GetAttr("square_unit_normalization", &square_unit_normalization));
+        OP_REQUIRES_OK(context, context->GetAttr("mean_iteration_step", &mean_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("sigma_iteration_step", &sigma_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("component_border_bound", &component_border_bound));
+        OP_REQUIRES_OK(context, context->GetAttr("sigma_lower_bound", &sigma_lower_bound));
+        OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
+        OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
+
+        dau_conv_settings.offsets_already_centered = offsets_already_centered;
+        //TODO calculate from inputs
+        dau_conv_settings.num_output = 64;
+        //num units per X and per Y
+        dau_conv_settings.number_units.push_back(number_units_x);
+        dau_conv_settings.number_units.push_back(number_units_y);
+        dau_conv_settings.bias_term = bias_term;
+        dau_conv_settings.kernel_size = kernel_size;
+        dau_conv_settings.pad = pad;
+        dau_conv_settings.stride = stride;
+        dau_conv_settings.unit_normalization = unit_normalization;
+        dau_conv_settings.square_unit_normalization = square_unit_normalization;
+        dau_conv_settings.mean_iteration_step = mean_iteration_step;
+        dau_conv_settings.sigma_iteration_step = sigma_iteration_step;
+        dau_conv_settings.component_border_bound = component_border_bound;
+        dau_conv_settings.sigma_lower_bound = sigma_lower_bound;
+        dau_conv_settings.merge_iteration_step = merge_iteration_step;
+        dau_conv_settings.merge_threshold = merge_threshold;
 
     }
 
@@ -137,7 +187,7 @@ public:
         // tensorflow variables are initialized in python.
         DAUComponentInitializerTensorflow<Dtype> param_initializer(1,1,1);
 
-        DAUConvNet::DAUConvSettings dau_conv_settings;
+        //DAUConvNet::DAUConvSettings dau_conv_settings;
         DAUKernelComputeGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsGPU<Dtype>* dau_kernel_params = new DAUKernelParamsGPU<Dtype>();
         dau_kernel_params->context_ = context;
@@ -197,6 +247,9 @@ public:
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
     }
+private:
+    DAUConvNet::DAUConvSettings dau_conv_settings;
+
 };
 
 #define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);
