@@ -15,6 +15,25 @@ using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
 
+/*
+     settings.num_output = 64;
+    //num units per X and per Y
+    settings.number_units.push_back(2);
+    settings.number_units.push_back(2);
+    settings.bias_term = true;
+    settings.kernel_size = 9;
+    settings.pad = 4;
+    settings.stride = 1;
+    settings.unit_normalization = true;
+    settings.square_unit_normalization = true;
+    settings.mean_iteration_step = 1;
+    settings.sigma_iteration_step = 1;
+    settings.component_border_bound = 4;
+    settings.sigma_lower_bound = 0.3;
+    settings.merge_iteration_step = 0;
+    settings.merge_threshold = 1;
+ */
+
 //initialize with w, mu1, mu2, sigma
 REGISTER_OP("BaseOp")
         .Input("input: float")
@@ -22,7 +41,21 @@ REGISTER_OP("BaseOp")
         .Input("mu1: float")
         .Input("mu2: float")
         .Input("sigma: float")
-        .Output("output: float");
+        .Output("output: float")
+        .Attr("number_units_x : int  = 2")
+        .Attr("number_units_y : int = 2")
+        .Attr("bias_term: bool = true")
+        .Attr("kernel_size: int = 9")
+        .Attr("pad: int = 4")
+        .Attr("stride: int = 1")
+        .Attr("unit_normalization: bool = true")
+        .Attr("square_unit_normalization: bool = true")
+        .Attr("mean_iteration_step: int = 1")
+        .Attr("sigma_iteration_step: int = 1")
+        .Attr("component_border_bound: int = 4")
+        .Attr("sigma_lower_bound: float = 0.3")
+        .Attr("merge_iteration_step: int = 0")
+        .Attr("merge_threshold: int = 1");
 /*.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));

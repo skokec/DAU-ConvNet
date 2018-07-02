@@ -20,7 +20,21 @@ REGISTER_OP("BaseOpGrad")
         .Output("grad_weights: float32") //
         .Output("grad_mu1: float32") //
         .Output("grad_mu2: float32") //
-        .Output("grad_sigma: float32"); //
+        .Output("grad_sigma: float32")
+        .Attr("number_units_x : int  = 2")
+        .Attr("number_units_y : int = 2")
+        .Attr("bias_term: bool = true")
+        .Attr("kernel_size: int = 9")
+        .Attr("pad: int = 4")
+        .Attr("stride: int = 1")
+        .Attr("unit_normalization: bool = true")
+        .Attr("square_unit_normalization: bool = true")
+        .Attr("mean_iteration_step: int = 1")
+        .Attr("sigma_iteration_step: int = 1")
+        .Attr("component_border_bound: int = 4")
+        .Attr("sigma_lower_bound: float = 0.3")
+        .Attr("merge_iteration_step: int = 0")
+        .Attr("merge_threshold: int = 1");
 
 template<typename Device, typename Dtype>
 class BaseOpGradOp : public OpKernel {
@@ -39,6 +53,9 @@ public:
         context->input("input", &input);
         const Tensor *weights;
         context->input("weights", &weights);
+        for(int i = 0; i < weights->shape().dims(); i++){
+            printf("%d\n", weights->shape().dim_size(i));
+        }
         const Tensor *mu1;
         context->input("mu1", &mu1);
         const Tensor *mu2;
@@ -139,8 +156,8 @@ public:
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
 
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) &weights, (Tensor *) &mu1, (Tensor *) &mu2,
-                                     (Tensor *) &sigma);
+        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
+                                     (Tensor *) sigma);
         tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,
                             dau_kernel_output, bottom_shape, in_train);
