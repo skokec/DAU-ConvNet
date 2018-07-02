@@ -222,6 +222,7 @@ public:
     //                                                           int num_units_per_x, int num_units_per_y, int num_units_ignore,
     //                                                           int conv_in_channels, int conv_out_channels, int kernel_h, int kernel_w
 	virtual void InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma);
+	virtual void InitializeGrad(DAUConvSettings& settings, Tensor* w_grad, Tensor* mu1_grad, Tensor* mu2_grad, Tensor* sigma_grad);
 	virtual void test_allocation();
 	virtual vector<int> Reshape(const vector<int>& bottom_shape, const vector<int>& top);
 
@@ -236,7 +237,13 @@ public:
 	shared_ptr<const Tensor* > param_buffer_mu2_;
 	shared_ptr<const Tensor* > param_buffer_sigma_;
 	shared_ptr<const Tensor* > param_buffer_bias_;
-	OpKernelContext* context_ = NULL;
+    shared_ptr<const Tensor* > param_buffer_w_grad;
+    shared_ptr<const Tensor* > param_buffer_mu1_grad;
+    shared_ptr<const Tensor* > param_buffer_mu2_grad;
+    shared_ptr<const Tensor* > param_buffer_sigma_grad;
+    shared_ptr<const Tensor* > param_buffer_bias_grad;
+
+    OpKernelContext* context_ = NULL;
 	Tensor* allocation_test = NULL;
 	cublasHandle_t cublasHandle;
 protected:
@@ -249,20 +256,20 @@ protected:
 	// learnable parameters of size
 
 	virtual Dtype* param_w() { Tensor* tmp_ten = (Tensor*) *(param_buffer_w_.get()); auto t_flat = tmp_ten -> flat<Dtype>(); return static_cast<Dtype*>(t_flat.data()); }
-	virtual Dtype* param_mu1() { Tensor* tmp_ten = (Tensor*) *param_buffer_mu1_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu2() { Tensor* tmp_ten = (Tensor*) *param_buffer_mu2_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_sigma() { Tensor* tmp_ten = (Tensor*) *param_buffer_sigma_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_bias() { Tensor* tmp_ten = (Tensor*) *param_buffer_bias_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_mu1() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu1_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_mu2() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu2_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_sigma() { Tensor* tmp_ten = (Tensor*) *(param_buffer_sigma_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_bias() { Tensor* tmp_ten = (Tensor*) *(param_buffer_bias_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 
 
 	// gradient buffers for learnable parameters
 	// implement after Op implementation
 	// IMPLEMENTATION JUST FOR COMPILATION
-	virtual Dtype* param_w_grad() { Tensor* tmp_ten = (Tensor*) *param_buffer_w_; auto dat = tmp_ten -> flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu1_grad() { Tensor* tmp_ten = (Tensor*) *param_buffer_mu1_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu2_grad() { Tensor* tmp_ten = (Tensor*) *param_buffer_mu2_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_sigma_grad(){ Tensor* tmp_ten = (Tensor*) *param_buffer_sigma_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
-	virtual Dtype* param_bias_grad() { Tensor* tmp_ten = (Tensor*) *param_buffer_bias_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_w_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_w_grad.get()); auto dat = tmp_ten -> flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_mu1_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu1_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_mu2_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu2_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_sigma_grad(){ Tensor* tmp_ten = (Tensor*) *(param_buffer_sigma_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+	virtual Dtype* param_bias_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_bias_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	//*/
 
 

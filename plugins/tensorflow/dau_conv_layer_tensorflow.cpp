@@ -18,6 +18,24 @@ using namespace std;
 
 using namespace tensorflow;
 
+template <typename Dtype>
+void DAUConvLayerTensorflowGPU<Dtype>::InitializeGrad(DAUConvSettings& settings, Tensor* w_grad, Tensor* mu1_grad, Tensor* mu2_grad, Tensor* sigma_grad){
+
+    this->param_buffer_w_grad = make_shared<const Tensor*>(w_grad);
+    this->param_buffer_mu1_grad = make_shared<const Tensor* >(mu1_grad);
+    this->param_buffer_mu2_grad = make_shared<const Tensor* >(mu2_grad);
+    this->param_buffer_sigma_grad = make_shared<const Tensor* >(sigma_grad);
+
+    if(settings.bias_term){
+        Tensor* bias_temp = new Tensor();
+        Tensor& tmp_ten = *bias_temp;
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w_grad->shape(), &tmp_ten));
+        this->param_buffer_bias_grad = make_shared<const Tensor*>(bias_temp);
+    }
+
+
+}
+
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma){

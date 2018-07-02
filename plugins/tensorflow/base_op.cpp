@@ -22,7 +22,7 @@ REGISTER_OP("BaseOp")
         .Input("mu1: float")
         .Input("mu2: float")
         .Input("sigma: float")
-        .Output("inner_product: float");
+        .Output("output: float");
 /*.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
@@ -41,7 +41,6 @@ REGISTER_OP("BaseOp")
   return Status::OK();
 });*/
 
-// D is device
 template <typename Device, typename Dtype>
 class BaseOpOp : public OpKernel {
 public:
@@ -61,11 +60,16 @@ public:
 
         DCHECK_EQ(5, context->num_inputs());
 
-        const Tensor& input = context->input(0);
-        const Tensor& weights = context->input(1);
-        const Tensor& mu1 = context->input(2);
-        const Tensor& mu2 = context->input(3);
-        const Tensor& sigma = context->input(4);
+        const Tensor* input;
+        context->input("input", &input);
+        const Tensor* weights;
+        context->input("weights",&weights);
+        const Tensor* mu1;
+        context->input("mu1",&mu1);
+        const Tensor* mu2;
+        context->input("mu2",&mu2);
+        const Tensor* sigma;
+        context->input("sigma",&sigma);
 
 
 
@@ -74,12 +78,12 @@ public:
         Tensor param_mu1;
         Tensor param_mu2;
         Tensor param_sigma;
-        TensorShape param_shape({1, input.shape().dim_size(1), weights.shape().dim_size(1), weights.shape().dim_size(3)});
+        TensorShape param_shape({1, input->shape().dim_size(1), weights->shape().dim_size(1), weights->shape().dim_size(3)});
         //TensorShape param_shape({1,1,1,1});
-        OP_REQUIRES_OK(context, context->allocate_temp(weights.dtype(),param_shape,&param_w));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu1.dtype(),param_shape,&param_mu1));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu2.dtype(),param_shape,&param_mu2));
-        OP_REQUIRES_OK(context, context->allocate_temp(sigma.dtype(),param_shape,&param_sigma));
+        OP_REQUIRES_OK(context, context->allocate_temp(weights->dtype(),param_shape,&param_w));
+        OP_REQUIRES_OK(context, context->allocate_temp(mu1->dtype(),param_shape,&param_mu1));
+        OP_REQUIRES_OK(context, context->allocate_temp(mu2->dtype(),param_shape,&param_mu2));
+        OP_REQUIRES_OK(context, context->allocate_temp(sigma->dtype(),param_shape,&param_sigma));
 
         Dtype* param_w_buf = static_cast<Dtype*>(param_w.flat<Dtype>().data());
         cudaError_t cuda_error_w = cudaMemset(param_w_buf,0, sizeof(Dtype)*param_w.NumElements());
@@ -92,8 +96,8 @@ public:
         CUDA_CHECK(cudaMemset(param_sigma_buf,0, sizeof(Dtype)*param_sigma.NumElements()));
 
 
-        const TensorShape& input_shape = input.shape();
-        const TensorShape& weights_shape = weights.shape();
+        const TensorShape& input_shape = input->shape();
+        const TensorShape& weights_shape = weights->shape();
 
 
         //Initializer does nothing, input values were of type Filler in caffe
@@ -131,14 +135,14 @@ public:
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) &weights,(Tensor*) &mu1,(Tensor*) &mu2,(Tensor*) &sigma);
+        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,dau_kernel_output, bottom_shape, in_train);
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(weights.dim_size(1));
+        top_shape.push_back(weights->dim_size(1));
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
@@ -154,7 +158,7 @@ public:
         auto out_data = output->flat<Dtype>();
         Dtype* top_data = static_cast<Dtype*>(out_data.data());
 
-        auto input_data = input.flat<Dtype>();
+        auto input_data = input->flat<Dtype>();
         const Dtype* bottom_data = static_cast<const Dtype*>(input_data.data());
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);

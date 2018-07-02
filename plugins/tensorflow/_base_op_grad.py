@@ -12,6 +12,8 @@ base_op_grad_module = tf.load_op_library('../../cmake-build-debug/plugins/tensor
 @ops.RegisterGradient("BaseOp")
 def _base_op_grad_cc(op, grad):
 
+    # Op is the Op object - get all the inputs
+    # Grad is the gradient with respect to the first input
     print("test")
     return base_op_grad_module.base_op_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4])
 
