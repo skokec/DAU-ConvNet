@@ -114,6 +114,8 @@ class _DAUConvolution(object):
     def __init__(
             self,
             input_shape,
+            dau_units,
+            max_kernel_size,
             padding,
             data_format=None,
             strides=None,
@@ -121,6 +123,8 @@ class _DAUConvolution(object):
             name=None):
         self.padding = padding
         self.name = name
+        self.dau_units = dau_units
+        self.max_kernel_size = max_kernel_size
         input_shape = input_shape
         if input_shape.ndims is None:
             raise ValueError("Rank of convolution must be known")
@@ -157,12 +161,21 @@ class _DAUConvolution(object):
     # pylint: enable=redefined-builtin
 
     def __call__(self, inp, w, mu1, mu2, sigma):  # pylint: disable=redefined-builtin
+
+        # TODO: number_units should be infereed from W, but we need to fix to have size of W,mu1,mu2,sigma in [S, Gy, Gx, F] format
+        settings = dict(number_units_x=self.dau_units[0],
+                        number_units_y=self.dau_units[1],
+                        kernel_size=self.max_kernel_size[0],
+                        pad=self.padding[0],
+                        component_border_bound=1,
+                        sigma_lower_bound=0.01)
         return self.dau_conv_op(
             input=inp,
             weights=w,
             mu1=mu1,
             mu2=mu2,
-            sigma=sigma
+            sigma=sigma,
+            **settings
             #strides=self.strides,
             #padding=self.padding,
             #data_format=self.data_format,
@@ -207,7 +220,7 @@ class DAUConv(base.Layer):
         self.filters = filters
         self.dau_units = utils.normalize_tuple(dau_units, self.rank, 'dau_components')
         self.max_kernel_size = utils.normalize_tuple(max_kernel_size, self.rank, 'max_kernel_size')
-        self.padding = map(lambda x: floor(x/2), self.max_kernel_size)
+        self.padding = list(map(lambda x: np.floor(x/2), self.max_kernel_size))
         self.strides = utils.normalize_tuple(strides, self.rank, 'strides')
         self.data_format = utils.normalize_data_format(data_format)
         self.activation = activation
@@ -281,14 +294,14 @@ class DAUConv(base.Layer):
                                              trainable=True,
                                              dtype=self.dtype)
         self.dau_mu1 = self.add_variable(name='mu1',
-                                             shape=dau_params_shape_,
+                                             shape=dau_params_shape,
                                              initializer=self.mu1_initializer,
                                              regularizer=self.mu1_regularizer,
                                              constraint=self.mu1_constraint,
                                              trainable=True,
                                              dtype=self.dtype)
         self.dau_mu2 = self.add_variable(name='mu2',
-                                             shape=dau_params_shape_,
+                                             shape=dau_params_shape,
                                              initializer=self.mu2_initializer,
                                              regularizer=self.mu2_regularizer,
                                              constraint=self.mu2_constraint,
@@ -317,6 +330,8 @@ class DAUConv(base.Layer):
 
         self._dau_convolution_op = _DAUConvolution(
             input_shape,
+            dau_units=self.dau_units,
+            max_kernel_size=self.max_kernel_size,
             padding=self.padding,
             strides=self.strides,
             num_dau_units_ignore=self.num_dau_units_ignore,
