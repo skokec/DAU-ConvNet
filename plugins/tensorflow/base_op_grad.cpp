@@ -127,16 +127,16 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(2, weights_shape, &grad_mu1));
         OP_REQUIRES_OK(context, context->allocate_output(3, weights_shape, &grad_mu2));
         OP_REQUIRES_OK(context, context->allocate_output(4, weights_shape, &grad_sigma));
-        Dtype *grad_w_buf = static_cast<Dtype *>(grad_weights->flat<Dtype>().data());
+        Dtype *grad_w_buf = reinterpret_cast<Dtype *>(grad_weights->flat<Dtype>().data());
         cudaError_t cuda_error_w = cudaMemset(grad_w_buf, 0, sizeof(Dtype) * grad_weights->NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype *grad_mu1_buf = static_cast<Dtype *>(grad_mu1->flat<Dtype>().data());
+        Dtype *grad_mu1_buf = reinterpret_cast<Dtype *>(grad_mu1->flat<Dtype>().data());
         cuda_error_w = cudaMemset(grad_mu1_buf, 0, sizeof(Dtype) * grad_mu1->NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype *grad_mu2_buf = static_cast<Dtype *>(grad_mu2->flat<Dtype>().data());
+        Dtype *grad_mu2_buf = reinterpret_cast<Dtype *>(grad_mu2->flat<Dtype>().data());
         cuda_error_w = cudaMemset(grad_mu2_buf, 0, sizeof(Dtype) * grad_mu2->NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype *grad_sigma_buf = static_cast<Dtype *>(grad_sigma->flat<Dtype>().data());
+        Dtype *grad_sigma_buf = reinterpret_cast<Dtype *>(grad_sigma->flat<Dtype>().data());
         cuda_error_w = cudaMemset(grad_sigma_buf, 0, sizeof(Dtype) * grad_sigma->NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
 
@@ -156,21 +156,21 @@ public:
         OP_REQUIRES_OK(context, context->allocate_temp(mu2->dtype(), param_shape, &param_mu2));
         OP_REQUIRES_OK(context, context->allocate_temp(sigma->dtype(), param_shape, &param_sigma));
 
-        Dtype *param_w_buf = static_cast<Dtype *>(param_w.flat<Dtype>().data());
+        Dtype *param_w_buf = reinterpret_cast<Dtype *>(param_w.flat<Dtype>().data());
         cuda_error_w = cudaMemset(param_w_buf, 0, sizeof(Dtype) * param_w.NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype *param_mu1_buf = static_cast<Dtype *>(param_mu1.flat<Dtype>().data());
+        Dtype *param_mu1_buf = reinterpret_cast<Dtype *>(param_mu1.flat<Dtype>().data());
         CUDA_CHECK(cudaMemset(param_mu1_buf, 0, sizeof(Dtype) * param_mu1.NumElements()));
-        Dtype *param_mu2_buf = static_cast<Dtype *>(param_mu2.flat<Dtype>().data());
+        Dtype *param_mu2_buf = reinterpret_cast<Dtype *>(param_mu2.flat<Dtype>().data());
         CUDA_CHECK(cudaMemset(param_mu2_buf, 0, sizeof(Dtype) * param_mu2.NumElements()));
-        Dtype *param_sigma_buf = static_cast<Dtype *>(param_sigma.flat<Dtype>().data());
+        Dtype *param_sigma_buf = reinterpret_cast<Dtype *>(param_sigma.flat<Dtype>().data());
         CUDA_CHECK(cudaMemset(param_sigma_buf, 0, sizeof(Dtype) * param_sigma.NumElements()));
         */
 
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
-        DAUComponentInitializerTensorflow<Dtype> param_initializer(1, 1, 1);
+        NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
@@ -224,16 +224,16 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &grad_input));
         auto out_data = grad_input->flat<Dtype>();
         //backward pass does not depend on top data?
-        Dtype *top_data = static_cast<Dtype *>(out_data.data());
+        Dtype *top_data = reinterpret_cast<Dtype *>(out_data.data());
         cuda_error_w = cudaMemset(top_data, 0, sizeof(Dtype) * grad_input->NumElements());
 
         // grad is top error since it is the error of the output of the layer
-        const Dtype *top_error = static_cast<const Dtype *>(grad->flat<Dtype>().data());
+        const Dtype *top_error = reinterpret_cast<const Dtype *>(grad->flat<Dtype>().data());
 
-        const Dtype *bottom_data = static_cast<const Dtype *>(input->flat<Dtype>().data());
+        const Dtype *bottom_data = reinterpret_cast<const Dtype *>(input->flat<Dtype>().data());
 
         OP_REQUIRES_OK(context, context->allocate_output(0, input_shape, &grad_input));
-        Dtype *bottom_error = static_cast<Dtype *>(grad_input->flat<Dtype>().data());
+        Dtype *bottom_error = reinterpret_cast<Dtype *>(grad_input->flat<Dtype>().data());
         cuda_error_w = cudaMemset(bottom_error, 0, sizeof(Dtype) * grad_input->NumElements());
         if (cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
 

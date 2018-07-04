@@ -150,29 +150,6 @@ public:
 
 
 
-        // allocate tensors for DAUKernelParams
-        /*
-        Tensor param_w;
-        Tensor param_mu1;
-        Tensor param_mu2;
-        Tensor param_sigma;
-        TensorShape param_shape({1, input->shape().dim_size(1), weights->shape().dim_size(1), weights->shape().dim_size(3)});
-        //TensorShape param_shape({1,1,1,1});
-        OP_REQUIRES_OK(context, context->allocate_temp(weights->dtype(),param_shape,&param_w));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu1->dtype(),param_shape,&param_mu1));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu2->dtype(),param_shape,&param_mu2));
-        OP_REQUIRES_OK(context, context->allocate_temp(sigma->dtype(),param_shape,&param_sigma));
-
-        Dtype* param_w_buf = static_cast<Dtype*>(param_w.flat<Dtype>().data());
-        cudaError_t cuda_error_w = cudaMemset(param_w_buf,0, sizeof(Dtype)*param_w.NumElements());
-        if(cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype* param_mu1_buf = static_cast<Dtype*>(param_mu1.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_mu1_buf,0, sizeof(Dtype)*param_mu1.NumElements()));
-        Dtype* param_mu2_buf = static_cast<Dtype*>(param_mu2.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_mu2_buf,0, sizeof(Dtype)*param_mu2.NumElements()));
-        Dtype* param_sigma_buf = static_cast<Dtype*>(param_sigma.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_sigma_buf,0, sizeof(Dtype)*param_sigma.NumElements()));
-        */
 
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
@@ -180,7 +157,7 @@ public:
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
-        DAUComponentInitializerTensorflow<Dtype> param_initializer(1,1,1);
+        NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
         //DAUConvNet::DAUConvSettings dau_conv_settings;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
@@ -236,10 +213,10 @@ public:
         Tensor* output;
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
         auto out_data = output->flat<Dtype>();
-        Dtype* top_data = static_cast<Dtype*>(out_data.data());
+        Dtype* top_data = reinterpret_cast<Dtype*>(out_data.data());
 
         auto input_data = input->flat<Dtype>();
-        const Dtype* bottom_data = static_cast<const Dtype*>(input_data.data());
+        const Dtype* bottom_data = reinterpret_cast<const Dtype*>(input_data.data());
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
