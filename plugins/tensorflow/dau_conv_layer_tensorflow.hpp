@@ -322,6 +322,8 @@ protected:
 
 	// workspace memory that we have allocated
 	void* own_workspace_data = NULL;
+    //tensor that holds the workspace memory
+    Tensor* own_workspace_tensor = NULL;
 
 	bool do_on_gpu_;
 };

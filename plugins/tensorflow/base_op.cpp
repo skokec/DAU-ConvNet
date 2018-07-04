@@ -217,12 +217,16 @@ public:
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
+
         top_shape.push_back(input_shape.dim_size(0));
         top_shape.push_back(weights->dim_size(1));
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
-        tf_layer.Reshape(bottom_shape, top_shape);
+        std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
+        for(int i : new_shape) printf("%d\n",i);
+        printf(".........\n");
+        for(int i : top_shape) printf("%d\n",i);
 
         //tf_layer forward_gpu implement..
 
