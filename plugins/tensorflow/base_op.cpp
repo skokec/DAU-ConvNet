@@ -42,10 +42,8 @@ REGISTER_OP("BaseOp")
         .Input("mu2: float")
         .Input("sigma: float")
         .Output("output: float")
-        .Attr("offsets_already_centered : bool = true")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
-        .Attr("bias_term: bool = true")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
         .Attr("stride: int = 1")
@@ -79,10 +77,8 @@ template <typename Device, typename Dtype>
 class BaseOpOp : public OpKernel {
 public:
     explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
-        bool offsets_already_centered;
         int number_units_x;
         int number_units_y;
-        bool bias_term;
         int kernel_size;
         int pad;
         int stride;
@@ -94,10 +90,8 @@ public:
         float sigma_lower_bound;
         int merge_iteration_step;
         int merge_threshold;
-        OP_REQUIRES_OK(context, context->GetAttr("offsets_already_centered", &offsets_already_centered));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
-        OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
         OP_REQUIRES_OK(context, context->GetAttr("stride", &stride));
@@ -110,13 +104,13 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
 
-        dau_conv_settings.offsets_already_centered = offsets_already_centered;
+        dau_conv_settings.offsets_already_centered = true;
         //TODO calculate from inputs
         dau_conv_settings.num_output = 64;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
-        dau_conv_settings.bias_term = bias_term;
+        dau_conv_settings.bias_term = false;
         dau_conv_settings.kernel_size = kernel_size;
         dau_conv_settings.pad = pad;
         dau_conv_settings.stride = stride;
@@ -157,6 +151,7 @@ public:
 
 
         // allocate tensors for DAUKernelParams
+        /*
         Tensor param_w;
         Tensor param_mu1;
         Tensor param_mu2;
@@ -177,7 +172,7 @@ public:
         CUDA_CHECK(cudaMemset(param_mu2_buf,0, sizeof(Dtype)*param_mu2.NumElements()));
         Dtype* param_sigma_buf = static_cast<Dtype*>(param_sigma.flat<Dtype>().data());
         CUDA_CHECK(cudaMemset(param_sigma_buf,0, sizeof(Dtype)*param_sigma.NumElements()));
-
+        */
 
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
@@ -188,12 +183,10 @@ public:
         DAUComponentInitializerTensorflow<Dtype> param_initializer(1,1,1);
 
         //DAUConvNet::DAUConvSettings dau_conv_settings;
-        DAUKernelComputeGPU<Dtype> dau_kernel_compute(context);
-        DAUKernelParamsGPU<Dtype>* dau_kernel_params = new DAUKernelParamsGPU<Dtype>();
-        dau_kernel_params->context_ = context;
-        DAUKernelOutputGPU<Dtype>* dau_kernel_output = new DAUKernelOutputGPU<Dtype>();
-        dau_kernel_output->context_ = context;
-        dau_kernel_params->initialize_params(param_w, param_mu1, param_mu2, param_sigma);
+        DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
+        DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
+        DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
+        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
         // TODO check how you can tell if it is in training? maybe pass it as argument in
         // Op call?
@@ -220,7 +213,7 @@ public:
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,dau_kernel_output, bottom_shape, in_train);
+        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;

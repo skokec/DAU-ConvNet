@@ -21,7 +21,6 @@ REGISTER_OP("BaseOpGrad")
         .Output("grad_mu1: float32") //
         .Output("grad_mu2: float32") //
         .Output("grad_sigma: float32")
-        .Attr("offsets_already_centered: bool = true")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
         .Attr("bias_term: bool = true")
@@ -41,7 +40,6 @@ template<typename Device, typename Dtype>
 class BaseOpGradOp : public OpKernel {
 public:
     explicit BaseOpGradOp(OpKernelConstruction *context) : OpKernel(context) {
-        bool offsets_already_centered;
         int number_units_x;
         int number_units_y;
         bool bias_term;
@@ -56,7 +54,6 @@ public:
         float sigma_lower_bound;
         int merge_iteration_step;
         int merge_threshold;
-        OP_REQUIRES_OK(context, context->GetAttr("offsets_already_centered", &offsets_already_centered));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
         OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
@@ -72,7 +69,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
 
-        dau_conv_settings.offsets_already_centered = offsets_already_centered;
+        dau_conv_settings.offsets_already_centered = true;
         //TODO calculate from inputs
         dau_conv_settings.num_output = 64;
         //num units per X and per Y
@@ -146,6 +143,7 @@ public:
 
 
         // allocate tensors for DAUKernelParams
+        /*
         Tensor param_w;
         Tensor param_mu1;
         Tensor param_mu2;
@@ -167,19 +165,17 @@ public:
         CUDA_CHECK(cudaMemset(param_mu2_buf, 0, sizeof(Dtype) * param_mu2.NumElements()));
         Dtype *param_sigma_buf = static_cast<Dtype *>(param_sigma.flat<Dtype>().data());
         CUDA_CHECK(cudaMemset(param_sigma_buf, 0, sizeof(Dtype) * param_sigma.NumElements()));
-
+        */
 
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
         DAUComponentInitializerTensorflow<Dtype> param_initializer(1, 1, 1);
 
-        DAUKernelComputeGPU<Dtype> dau_kernel_compute(context);
-        DAUKernelParamsGPU<Dtype> *dau_kernel_params = new DAUKernelParamsGPU<Dtype>();
-        dau_kernel_params->context_ = context;
-        DAUKernelOutputGPU<Dtype> *dau_kernel_output = new DAUKernelOutputGPU<Dtype>();
-        dau_kernel_output->context_ = context;
-        dau_kernel_params->initialize_params(param_w, param_mu1, param_mu2, param_sigma);
+        DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
+        DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
+        DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
+        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
         // TODO check how you can tell if it is in training? maybe pass it as argument in
         // Op call?
@@ -208,8 +204,8 @@ public:
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                      (Tensor *) sigma);
         tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,
-                            dau_kernel_output, bottom_shape, in_train);
+        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
+                            &dau_kernel_output, bottom_shape, in_train);
 
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));

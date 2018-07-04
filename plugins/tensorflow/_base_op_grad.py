@@ -31,13 +31,10 @@ def _base_op_grad_cc(op, grad):
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1");
     """
-    offsets_already_centered = op.get_attr("offsets_already_centered")
     number_units_x = op.get_attr("number_units_x")
     print(number_units_x)
     number_units_y = op.get_attr("number_units_y")
     print(number_units_y)
-    bias_term = op.get_attr("bias_term")
-    print(bias_term)
     kernel_size = op.get_attr("kernel_size")
     print(kernel_size)
     pad = op.get_attr("pad")
@@ -62,10 +59,8 @@ def _base_op_grad_cc(op, grad):
     print(merge_threshold)
 
     return base_op_grad_module.base_op_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4],
-                                            offsets_already_centered=offsets_already_centered,
                                             number_units_x=number_units_x,
                                             number_units_y=number_units_y,
-                                            bias_term=bias_term,
                                             kernel_size=kernel_size,
                                             pad=pad,
                                             stride=stride,

@@ -31,10 +31,10 @@ using namespace tensorflow;
 // Tensorflow implementation of buffers used in DAUKernel*
 
 template <typename Dtype>
-class DAUKernelParams : public  BaseDAUKernelParams<Dtype> {
+class DAUKernelParamsTF : public  BaseDAUKernelParams<Dtype> {
 public:
-	//explicit DAUKernelParams(OpKernelContext* context)
-	//	: context_(context){}
+	explicit DAUKernelParamsTF(OpKernelContext* context)
+		: context_(context){}
 
 	void reshape(int num_in_channels, int num_out_channels, int num_gauss);
 
@@ -42,16 +42,17 @@ public:
 
 	shared_ptr<Tensor*> weight_, mu1_, mu2_, sigma_; // CPU for setting (once) GPU for computing, except for sigma
 
+private:
 	OpKernelContext* context_ = NULL;
 
 };
 
 
 template <typename Dtype>
-class DAUKernelOutput : public BaseDAUKernelOutput<Dtype> {
+class DAUKernelOutputTF : public BaseDAUKernelOutput<Dtype> {
 public:
-	//explicit DAUKernelOutput(OpKernelContext* context)
-	//: context_(context){}
+	explicit DAUKernelOutputTF(OpKernelContext* context)
+	: context_(context){}
 
 	virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w);
 
@@ -61,21 +62,23 @@ public:
 	// derivative weights for back-propagation and all four parameters
 	Tensor* d_error_ = NULL;
 	Tensor* d_params_ = NULL; // four params == [w,mu1,mu2,sigma]
+
+private:
 	OpKernelContext* context_ = NULL;
+
 };
 
 template <typename Dtype>
-class DAUKernelCompute : public BaseDAUKernelCompute<Dtype> {
+class DAUKernelComputeTF : public BaseDAUKernelCompute<Dtype> {
 public:
-	explicit DAUKernelCompute(OpKernelContext* context)
+	explicit DAUKernelComputeTF(OpKernelContext* context)
 		: context_(context){}
 
-	virtual ~DAUKernelCompute();
+	virtual ~DAUKernelComputeTF();
 
 	virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
 						 int kernel_h, int kernel_w);
 
-	OpKernelContext* context_ = NULL;
 
 protected:
 	void create_precompute_index(const int index_size, const int kernel_size);
@@ -87,7 +90,10 @@ protected:
 
 	// pre-computed indexes for caffe_gpu_sum in get_kernels
 	Tensor* tmp_precomp_index_ = NULL;
-	
+
+private:
+	OpKernelContext* context_ = NULL;
+
 };
 
 
@@ -95,8 +101,10 @@ protected:
 // GPU version of Caffe buffers used in DAUKernel*
 
 template <typename Dtype>
-class DAUKernelParamsGPU : public  DAUKernelParams<Dtype> {
+class DAUKernelParamsTFGPU : public  DAUKernelParamsTF<Dtype> {
 public:
+    explicit DAUKernelParamsTFGPU(OpKernelContext* context)
+    : DAUKernelParamsTF<Dtype>(context), context_(context){}
 
 	//virtual Dtype* weight() { return this->weight_->mutable_gpu_flat<Dtype>().data(); }
 	//virtual Dtype* mu1() { return this->mu1_->mutable_gpu_flat<Dtype>().data(); }
@@ -110,24 +118,33 @@ public:
 	virtual Dtype* mu2() { Tensor* tmp_ten = *(this->mu2_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return static_cast<Dtype*>(dat);}
 	virtual Dtype* sigma() { Tensor* tmp_ten = *(this->sigma_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return static_cast<Dtype*>(dat); }
 
+private:
+    OpKernelContext* context_;
+
 };
 
 template <typename Dtype>
-class DAUKernelOutputGPU : public DAUKernelOutput<Dtype> {
+class DAUKernelOutputTFGPU : public DAUKernelOutputTF<Dtype> {
 public:
-	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+    explicit DAUKernelOutputTFGPU(OpKernelContext* context)
+    : DAUKernelOutputTF<Dtype>(context), context_(context){}
+
+    virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_error() { Tensor* tmp_ten = this->d_error_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_params() { Tensor* tmp_ten = this->d_params_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
+
+private:
+    OpKernelContext* context_;
+
 };
 
 template <typename Dtype>
-class DAUKernelComputeGPU : public DAUKernelCompute<Dtype> {
+class DAUKernelComputeTFGPU : public DAUKernelComputeTF<Dtype> {
 public:
 
-	explicit DAUKernelComputeGPU(OpKernelContext* context)
-		: DAUKernelCompute<Dtype>(context), context_(context){}
+	explicit DAUKernelComputeTFGPU(OpKernelContext* context)
+		: DAUKernelComputeTF<Dtype>(context), context_(context){}
 
-	OpKernelContext* context_;
 
 	virtual Dtype* param_temp(typename BaseDAUKernelCompute<Dtype>::Param_IDX index) { Tensor* tmp_ten = this->param_buffers_[index]; auto dat = tmp_ten->flat<Dtype>().data();
 	return static_cast<Dtype*>(dat);}
@@ -136,11 +153,14 @@ public:
 	virtual int* precomp_index() { Tensor* tmp_ten = this->tmp_precomp_index_; auto dat = tmp_ten->flat<int>().data();
 	return static_cast<int*>(dat);}
 
+private:
+    OpKernelContext* context_;
+
 };
 
 //
 template <typename Dtype>
-class DAUKernelParamsCPU : public DAUKernelParams<Dtype> {
+class DAUKernelParamsTFCPU : public DAUKernelParamsTF<Dtype> {
 public:
 
 	virtual Dtype* weight() { Tensor* tmp_ten = (Tensor*) this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
@@ -150,7 +170,7 @@ public:
 };
 
 template <typename Dtype>
-class DAUKernelOutputCPU : public DAUKernelOutput<Dtype> {
+class DAUKernelOutputTFCPU : public DAUKernelOutputTF<Dtype> {
 public:
 	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
 	virtual Dtype* d_error() { Tensor* tmp_ten  =this->d_error_; auto dat = tmp_ten->flat<Dtype>().data(); return static_cast<Dtype*>(dat); }
@@ -158,7 +178,7 @@ public:
 };
 
 template <typename Dtype>
-class DAUKernelComputeCPU : public DAUKernelCompute<Dtype> {
+class DAUKernelComputeTFCPU : public DAUKernelComputeTF<Dtype> {
 public:
 
 	virtual Dtype* param_temp(typename BaseDAUKernelCompute<Dtype>::Param_IDX index) { Tensor* tmp_ten = this->param_buffers_[index]; auto dat = tmp_ten->flat<Dtype>().data();
