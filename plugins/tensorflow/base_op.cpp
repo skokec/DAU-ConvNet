@@ -14,26 +14,6 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-
-/*
-     settings.num_output = 64;
-    //num units per X and per Y
-    settings.number_units.push_back(2);
-    settings.number_units.push_back(2);
-    settings.bias_term = true;
-    settings.kernel_size = 9;
-    settings.pad = 4;
-    settings.stride = 1;
-    settings.unit_normalization = true;
-    settings.square_unit_normalization = true;
-    settings.mean_iteration_step = 1;
-    settings.sigma_iteration_step = 1;
-    settings.component_border_bound = 4;
-    settings.sigma_lower_bound = 0.3;
-    settings.merge_iteration_step = 0;
-    settings.merge_threshold = 1;
- */
-
 //initialize with w, mu1, mu2, sigma
 REGISTER_OP("BaseOp")
         .Input("input: float")
@@ -42,10 +22,9 @@ REGISTER_OP("BaseOp")
         .Input("mu2: float")
         .Input("sigma: float")
         .Output("output: float")
-        .Attr("offsets_already_centered : bool = true")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
-        .Attr("bias_term: bool = true")
+        .Attr("num_output : int = 64")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
         .Attr("stride: int = 1")
@@ -79,10 +58,9 @@ template <typename Device, typename Dtype>
 class BaseOpOp : public OpKernel {
 public:
     explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
-        bool offsets_already_centered;
         int number_units_x;
         int number_units_y;
-        bool bias_term;
+        int num_output;
         int kernel_size;
         int pad;
         int stride;
@@ -94,10 +72,9 @@ public:
         float sigma_lower_bound;
         int merge_iteration_step;
         int merge_threshold;
-        OP_REQUIRES_OK(context, context->GetAttr("offsets_already_centered", &offsets_already_centered));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
-        OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
+        OP_REQUIRES_OK(context, context->GetAttr("num_output", &num_output));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
         OP_REQUIRES_OK(context, context->GetAttr("stride", &stride));
@@ -110,13 +87,13 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
 
-        dau_conv_settings.offsets_already_centered = offsets_already_centered;
+        dau_conv_settings.offsets_already_centered = true;
         //TODO calculate from inputs
-        dau_conv_settings.num_output = 64;
+        dau_conv_settings.num_output = num_output;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
-        dau_conv_settings.bias_term = bias_term;
+        dau_conv_settings.bias_term = false;
         dau_conv_settings.kernel_size = kernel_size;
         dau_conv_settings.pad = pad;
         dau_conv_settings.stride = stride;
@@ -133,15 +110,10 @@ public:
 
     void Compute(OpKernelContext* context) override {
 
-        /*
-        memory_status = cudaMemGetInfo(&free_bytes, &total_bytes);
-        if(cudaSuccess != memory_status) printf("Error cuda %d\n", memory_status);
-        free_db = (double) free_bytes;
-        total_db = (double) total_bytes;
-        printf("KernelParam buffers allocation Total %f, Free %f\n", total_db, free_db);
-        */
-
         DCHECK_EQ(5, context->num_inputs());
+
+        // in_train is used only for merge_iteration_step, which is not setup.
+        bool in_train = false;
 
         const Tensor* input;
         context->input("input", &input);
@@ -155,62 +127,45 @@ public:
         context->input("sigma",&sigma);
 
 
-
-        // allocate tensors for DAUKernelParams
-        Tensor param_w;
-        Tensor param_mu1;
-        Tensor param_mu2;
-        Tensor param_sigma;
-        TensorShape param_shape({1, input->shape().dim_size(1), weights->shape().dim_size(1), weights->shape().dim_size(3)});
-        //TensorShape param_shape({1,1,1,1});
-        OP_REQUIRES_OK(context, context->allocate_temp(weights->dtype(),param_shape,&param_w));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu1->dtype(),param_shape,&param_mu1));
-        OP_REQUIRES_OK(context, context->allocate_temp(mu2->dtype(),param_shape,&param_mu2));
-        OP_REQUIRES_OK(context, context->allocate_temp(sigma->dtype(),param_shape,&param_sigma));
-
-        Dtype* param_w_buf = static_cast<Dtype*>(param_w.flat<Dtype>().data());
-        cudaError_t cuda_error_w = cudaMemset(param_w_buf,0, sizeof(Dtype)*param_w.NumElements());
-        if(cuda_error_w != cudaSuccess) printf("Cuda error weights %d \n", cuda_error_w);
-        Dtype* param_mu1_buf = static_cast<Dtype*>(param_mu1.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_mu1_buf,0, sizeof(Dtype)*param_mu1.NumElements()));
-        Dtype* param_mu2_buf = static_cast<Dtype*>(param_mu2.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_mu2_buf,0, sizeof(Dtype)*param_mu2.NumElements()));
-        Dtype* param_sigma_buf = static_cast<Dtype*>(param_sigma.flat<Dtype>().data());
-        CUDA_CHECK(cudaMemset(param_sigma_buf,0, sizeof(Dtype)*param_sigma.NumElements()));
-
-
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
 
+        if(dau_conv_settings.num_output != weights_shape.dim_size(3)){
+            dau_conv_settings.num_output = weights_shape.dim_size(3);
+            printf("Num output settings was set to an incorrect value, set the value to %d\n", dau_conv_settings.num_output);
+        }
+
+        //Check if output size of parameters equals to specified number of outputs
+        /*
+        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(3));
+        */
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
-        DAUComponentInitializerTensorflow<Dtype> param_initializer(1,1,1);
+        NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
         //DAUConvNet::DAUConvSettings dau_conv_settings;
-        DAUKernelComputeGPU<Dtype> dau_kernel_compute(context);
-        DAUKernelParamsGPU<Dtype>* dau_kernel_params = new DAUKernelParamsGPU<Dtype>();
-        dau_kernel_params->context_ = context;
-        DAUKernelOutputGPU<Dtype>* dau_kernel_output = new DAUKernelOutputGPU<Dtype>();
-        dau_kernel_output->context_ = context;
-        dau_kernel_params->initialize_params(param_w, param_mu1, param_mu2, param_sigma);
-
-        // TODO check how you can tell if it is in training? maybe pass it as argument in
-        // Op call?
-        bool in_train = true;
+        DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
+        DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
+        DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
+        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
         std::vector<int> bottom_shape;
         for(int i = 0; i < input_shape.dims(); i++){
             bottom_shape.push_back(input_shape.dim_size(i));
         }
 
-
         cublasHandle_t handle;
         cublasCreate(&handle);
-        //const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
-        //                                                                                -> stream()->implementation()
-        //                                                                                ->CudaStreamMemberHack()) );
-        //cublasSetStream(handle, stream);
+        /*
+        const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
+                                                                                        -> stream()->implementation()
+                                                                                        ->CudaStreamMemberHack()) );
+        cublasSetStream(handle, (cudaStream_t)stream);
+         */
         //TODO Get stream from context and add it to handle..
 
 
@@ -218,18 +173,23 @@ public:
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
+        tf_layer.is_forward_op = true;
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, dau_kernel_params,dau_kernel_output, bottom_shape, in_train);
+        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
+
         top_shape.push_back(input_shape.dim_size(0));
         top_shape.push_back(weights->dim_size(1));
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
-        tf_layer.Reshape(bottom_shape, top_shape);
+        std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
+        //for(int i : new_shape) printf("%d\n",i);
+        //printf(".........\n");
+        //for(int i : top_shape) printf("%d\n",i);
 
         //tf_layer forward_gpu implement..
 
@@ -239,10 +199,10 @@ public:
         Tensor* output;
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
         auto out_data = output->flat<Dtype>();
-        Dtype* top_data = static_cast<Dtype*>(out_data.data());
+        Dtype* top_data = reinterpret_cast<Dtype*>(out_data.data());
 
         auto input_data = input->flat<Dtype>();
-        const Dtype* bottom_data = static_cast<const Dtype*>(input_data.data());
+        const Dtype* bottom_data = reinterpret_cast<const Dtype*>(input_data.data());
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
