@@ -47,7 +47,7 @@ class baseOpOpTest(unittest.TestCase):
                 W_rand = np.random.rand(1,32,4,64)
                 mu1_rand = np.random.rand(1,32,4,64)
                 mu2_rand = np.random.rand(1,32,4,64)
-                sigma_rand = np.random.rand(1,32,4,64)
+                sigma_rand = np.ones((1,32,4,64))*0.5
 
                 t_start = time.time()
                 gradient_base_op = sess.run(grad_x_base_op, feed_dict = {x: x_rand, W: W_rand, mu1: mu1_rand, mu2: mu2_rand, sigma: sigma_rand})

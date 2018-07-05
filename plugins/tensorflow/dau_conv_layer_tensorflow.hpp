@@ -106,13 +106,6 @@ public:
     explicit DAUKernelParamsTFGPU(OpKernelContext* context)
     : DAUKernelParamsTF<Dtype>(context), context_(context){}
 
-	//virtual Dtype* weight() { return this->weight_->mutable_gpu_flat<Dtype>().data(); }
-	//virtual Dtype* mu1() { return this->mu1_->mutable_gpu_flat<Dtype>().data(); }
-	//virtual Dtype* mu2() { return this->mu2_->mutable_gpu_flat<Dtype>().data(); }
-	//virtual Dtype* sigma() { return this->sigma_->mutable_gpu_flat<Dtype>().data(); }
-
-	//either keep this or change to auto?
-	// also instead of matrix maybe use tensor->flat<Dtype>().data()
 	virtual Dtype* weight() { Tensor* tmp_ten = *(this->weight_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat); }
 	virtual Dtype* mu1() { Tensor* tmp_ten = *(this->mu1_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat);}
 	virtual Dtype* mu2() { Tensor* tmp_ten = *(this->mu2_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat);}
@@ -163,18 +156,18 @@ template <typename Dtype>
 class DAUKernelParamsTFCPU : public DAUKernelParamsTF<Dtype> {
 public:
 
-	virtual Dtype* weight() { Tensor* tmp_ten = (Tensor*) this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* mu1() { Tensor* tmp_ten = (Tensor*) this->mu1_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat);}
-	virtual Dtype* mu2() { Tensor* tmp_ten = (Tensor*) this->mu2_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* sigma() { Tensor* tmp_ten = (Tensor*) this->sigma_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
+	virtual Dtype* weight() { return reinterpret_cast<Dtype*>(( *this->weight_.get())->template flat<Dtype>().data());  }
+	virtual Dtype* mu1() { return reinterpret_cast<Dtype*>(( *this->mu1_.get())->template flat<Dtype>().data()); }
+	virtual Dtype* mu2() { return reinterpret_cast<Dtype*>(( *this->mu2_.get())->template flat<Dtype>().data()); }
+	virtual Dtype* sigma() { return reinterpret_cast<Dtype*>(( *this->sigma_.get())->template flat<Dtype>().data()); }
 };
 
 template <typename Dtype>
 class DAUKernelOutputTFCPU : public DAUKernelOutputTF<Dtype> {
 public:
-	virtual Dtype* weight() { Tensor* tmp_ten = this->weight_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* d_error() { Tensor* tmp_ten  =this->d_error_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* d_params() { Tensor* tmp_ten = this->d_params_; auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
+	virtual Dtype* weight() {return reinterpret_cast<Dtype*>(this->weight_->template flat<Dtype>().data());}
+	virtual Dtype* d_error() {return reinterpret_cast<Dtype*>(this->d_error_->template flat<Dtype>().data()); }
+	virtual Dtype* d_params() {return reinterpret_cast<Dtype*>(this->d_params_->template flat<Dtype>().data()); }
 };
 
 template <typename Dtype>
@@ -230,7 +223,6 @@ public:
     //                                                           int conv_in_channels, int conv_out_channels, int kernel_h, int kernel_w
 	virtual void InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma);
 	virtual void InitializeGrad(DAUConvSettings& settings, Tensor* w_grad, Tensor* mu1_grad, Tensor* mu2_grad, Tensor* sigma_grad);
-	virtual void test_allocation();
 	virtual vector<int> Reshape(const vector<int>& bottom_shape, const vector<int>& top);
 
 	// make compute_output_shape() public
@@ -253,6 +245,8 @@ public:
     OpKernelContext* context_ = NULL;
 	Tensor* allocation_test = NULL;
 	cublasHandle_t cublasHandle;
+
+    bool is_forward_op;
 protected:
 	virtual bool is_data_on_gpu() { return do_on_gpu_; }
 
@@ -260,34 +254,26 @@ protected:
 
 	virtual bool update_prefiltering_kernels(cudaStream_t stream);
 
-	// learnable parameters of size
-
-	virtual Dtype* param_w() { Tensor* tmp_ten = (Tensor*) *(param_buffer_w_.get()); auto t_flat = tmp_ten -> flat<Dtype>(); return reinterpret_cast<Dtype*>(t_flat.data()); }
-	virtual Dtype* param_mu1() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu1_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu2() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu2_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_sigma() { Tensor* tmp_ten = (Tensor*) *(param_buffer_sigma_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_bias() { Tensor* tmp_ten = (Tensor*) *(param_buffer_bias_.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
+    virtual Dtype* param_w() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_w_.get())->flat<Dtype>().data()); }
+    virtual Dtype* param_mu1() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu1_.get())->flat<Dtype>().data());}
+    virtual Dtype* param_mu2() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu2_.get())->flat<Dtype>().data());}
+    virtual Dtype* param_sigma() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_sigma_.get())->flat<Dtype>().data());}
+    virtual Dtype* param_bias() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_.get())->flat<Dtype>().data());}
 
 
-	// gradient buffers for learnable parameters
-	// implement after Op implementation
-	// IMPLEMENTATION JUST FOR COMPILATION
-	virtual Dtype* param_w_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_w_grad.get()); auto dat = tmp_ten -> flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu1_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu1_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_mu2_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_mu2_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_sigma_grad(){ Tensor* tmp_ten = (Tensor*) *(param_buffer_sigma_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* param_bias_grad() { Tensor* tmp_ten = (Tensor*) *(param_buffer_bias_grad.get()); auto dat = tmp_ten->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	//*/
+    virtual Dtype* param_w_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_w_grad.get())->flat<Dtype>().data());}
+    virtual Dtype* param_mu1_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu1_grad.get())->flat<Dtype>().data());}
+    virtual Dtype* param_mu2_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu2_grad.get())->flat<Dtype>().data());}
+    virtual Dtype* param_sigma_grad(){return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_sigma_grad.get())->flat<Dtype>().data());}
+    virtual Dtype* param_bias_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_grad.get())->flat<Dtype>().data());}
 
 
-	// remaining intermediate/temporary buffers
-
-	virtual Dtype* temp_bwd_gradients() { auto dat = bwd_gradients_->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* temp_interm_buffer() { auto dat = interm_buffer_->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* temp_param_buffer() { auto dat = tmp_param_buffer_->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* temp_col_buffer() { auto dat = col_buffer_->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* temp_bias_multiplier() { auto dat = bias_multiplier_->flat<Dtype>().data(); return reinterpret_cast<Dtype*>(dat); }
-
+    // remaining intermediate/temporary buffers
+    virtual Dtype* temp_bwd_gradients() {return reinterpret_cast<Dtype*>(bwd_gradients_->flat<Dtype>().data()); }
+    virtual Dtype* temp_interm_buffer() {return reinterpret_cast<Dtype*>(interm_buffer_->flat<Dtype>().data()); }
+    virtual Dtype* temp_param_buffer() {return reinterpret_cast<Dtype*>(tmp_param_buffer_->flat<Dtype>().data()); }
+    virtual Dtype* temp_col_buffer() {return reinterpret_cast<Dtype*>(col_buffer_->flat<Dtype>().data()); }
+    virtual Dtype* temp_bias_multiplier() {return reinterpret_cast<Dtype*>(bias_multiplier_->flat<Dtype>().data()); }
 
 	
 
@@ -344,6 +330,16 @@ protected:
  *
  * @tparam Dtype
  */
+
+//OP_REQUIRES_OK uses return, problematic for compilation in non void functions
+#define OP_REQUIRES_OK_BREAK(CTX, ...)                      \
+  do {                                                      \
+    ::tensorflow::Status _s(__VA_ARGS__);                   \
+    if (!TF_PREDICT_TRUE(_s.ok())) {                        \
+      (CTX)->CtxFailureWithWarning(__FILE__, __LINE__, _s); \
+      break;                                                \
+    }                                                       \
+  } while (0)
 
 
 #endif  // CAFFE_DAU_CONV_LAYER_HPP_

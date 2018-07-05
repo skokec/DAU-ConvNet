@@ -14,26 +14,6 @@ using namespace tensorflow;
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-
-/*
-     settings.num_output = 64;
-    //num units per X and per Y
-    settings.number_units.push_back(2);
-    settings.number_units.push_back(2);
-    settings.bias_term = true;
-    settings.kernel_size = 9;
-    settings.pad = 4;
-    settings.stride = 1;
-    settings.unit_normalization = true;
-    settings.square_unit_normalization = true;
-    settings.mean_iteration_step = 1;
-    settings.sigma_iteration_step = 1;
-    settings.component_border_bound = 4;
-    settings.sigma_lower_bound = 0.3;
-    settings.merge_iteration_step = 0;
-    settings.merge_threshold = 1;
- */
-
 //initialize with w, mu1, mu2, sigma
 REGISTER_OP("BaseOp")
         .Input("input: float")
@@ -44,6 +24,7 @@ REGISTER_OP("BaseOp")
         .Output("output: float")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
+        .Attr("num_output : int = 64")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
         .Attr("stride: int = 1")
@@ -79,6 +60,7 @@ public:
     explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
         int number_units_x;
         int number_units_y;
+        int num_output;
         int kernel_size;
         int pad;
         int stride;
@@ -92,6 +74,7 @@ public:
         int merge_threshold;
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
+        OP_REQUIRES_OK(context, context->GetAttr("num_output", &num_output));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
         OP_REQUIRES_OK(context, context->GetAttr("stride", &stride));
@@ -106,7 +89,7 @@ public:
 
         dau_conv_settings.offsets_already_centered = true;
         //TODO calculate from inputs
-        dau_conv_settings.num_output = 64;
+        dau_conv_settings.num_output = num_output;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
@@ -127,15 +110,10 @@ public:
 
     void Compute(OpKernelContext* context) override {
 
-        /*
-        memory_status = cudaMemGetInfo(&free_bytes, &total_bytes);
-        if(cudaSuccess != memory_status) printf("Error cuda %d\n", memory_status);
-        free_db = (double) free_bytes;
-        total_db = (double) total_bytes;
-        printf("KernelParam buffers allocation Total %f, Free %f\n", total_db, free_db);
-        */
-
         DCHECK_EQ(5, context->num_inputs());
+
+        // in_train is used only for merge_iteration_step, which is not setup.
+        bool in_train = false;
 
         const Tensor* input;
         context->input("input", &input);
@@ -149,11 +127,21 @@ public:
         context->input("sigma",&sigma);
 
 
-
-
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
 
+        if(dau_conv_settings.num_output != weights_shape.dim_size(3)){
+            dau_conv_settings.num_output = weights_shape.dim_size(3);
+            printf("Num output settings was set to an incorrect value, set the value to %d\n", dau_conv_settings.num_output);
+        }
+
+        //Check if output size of parameters equals to specified number of outputs
+        /*
+        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(3));
+        DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(3));
+        */
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
@@ -165,22 +153,19 @@ public:
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
         //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
-        // TODO check how you can tell if it is in training? maybe pass it as argument in
-        // Op call?
-        bool in_train = true;
-
         std::vector<int> bottom_shape;
         for(int i = 0; i < input_shape.dims(); i++){
             bottom_shape.push_back(input_shape.dim_size(i));
         }
 
-
         cublasHandle_t handle;
         cublasCreate(&handle);
-        //const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
-        //                                                                                -> stream()->implementation()
-        //                                                                                ->CudaStreamMemberHack()) );
-        //cublasSetStream(handle, stream);
+        /*
+        const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
+                                                                                        -> stream()->implementation()
+                                                                                        ->CudaStreamMemberHack()) );
+        cublasSetStream(handle, (cudaStream_t)stream);
+         */
         //TODO Get stream from context and add it to handle..
 
 
@@ -188,6 +173,7 @@ public:
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
+        tf_layer.is_forward_op = true;
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
@@ -201,9 +187,9 @@ public:
         top_shape.push_back(input_shape.dim_size(3));
 
         std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
-        for(int i : new_shape) printf("%d\n",i);
-        printf(".........\n");
-        for(int i : top_shape) printf("%d\n",i);
+        //for(int i : new_shape) printf("%d\n",i);
+        //printf(".........\n");
+        //for(int i : top_shape) printf("%d\n",i);
 
         //tf_layer forward_gpu implement..
 
