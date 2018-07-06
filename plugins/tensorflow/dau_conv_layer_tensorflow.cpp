@@ -21,16 +21,16 @@ using namespace tensorflow;
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::InitializeGrad(DAUConvSettings& settings, Tensor* w_grad, Tensor* mu1_grad, Tensor* mu2_grad, Tensor* sigma_grad){
 
-    this->param_buffer_w_grad = make_shared<const Tensor*>(w_grad);
-    this->param_buffer_mu1_grad = make_shared<const Tensor* >(mu1_grad);
-    this->param_buffer_mu2_grad = make_shared<const Tensor* >(mu2_grad);
-    this->param_buffer_sigma_grad = make_shared<const Tensor* >(sigma_grad);
+    this->param_buffer_w_grad = w_grad;
+    this->param_buffer_mu1_grad = mu1_grad;
+    this->param_buffer_mu2_grad = mu2_grad;
+    this->param_buffer_sigma_grad = sigma_grad;
 
     if(settings.bias_term){
         Tensor* bias_temp = new Tensor();
         Tensor& tmp_ten = *bias_temp;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w_grad->shape(), &tmp_ten));
-        this->param_buffer_bias_grad = make_shared<const Tensor*>(bias_temp);
+        this->param_buffer_bias_grad = bias_temp;
     }
 
 
@@ -40,22 +40,18 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeGrad(DAUConvSettings& settings,
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& settings, Tensor* w, Tensor* mu1, Tensor* mu2, Tensor* sigma){
     //Set the layer parameters from input tensors
-    if(this->param_buffer_w_)this->param_buffer_w_.reset();
-    if(this->param_buffer_mu1_)this->param_buffer_mu1_.reset();
-    if(this->param_buffer_mu2_)this->param_buffer_mu2_.reset();
-    if(this->param_buffer_sigma_)this->param_buffer_sigma_.reset();
 
-    this->param_buffer_w_ = make_shared<const Tensor*>(w);
-    this->param_buffer_mu1_ = make_shared<const Tensor* >(mu1);
-    this->param_buffer_mu2_ = make_shared<const Tensor* >(mu2);
-    this->param_buffer_sigma_ = make_shared<const Tensor* >(sigma);
+    this->param_buffer_w_ = w;
+    this->param_buffer_mu1_ = mu1;
+    this->param_buffer_mu2_ = mu2;
+    this->param_buffer_sigma_ = sigma;
 
     if(settings.bias_term){
         Tensor* bias_temp = new Tensor();
         Tensor& tmp_ten = *bias_temp;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w->shape(), &tmp_ten));
-        if(this->param_buffer_bias_) this->param_buffer_bias_.reset();
-        this->param_buffer_bias_ = make_shared<const Tensor*>(bias_temp);
+        if(this->param_buffer_bias_) delete this->param_buffer_bias_;
+        this->param_buffer_bias_ = bias_temp;
     }
     
 }
@@ -63,6 +59,12 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& sett
 template <typename Dtype>
 DAUConvLayerTensorflowGPU<Dtype>::~DAUConvLayerTensorflowGPU(){
     this->deallocate_workspace_mem();
+    if(this->bwd_gradients_){ delete this->bwd_gradients_; this->bwd_gradients_ = NULL;}
+    if(this->interm_buffer_){ delete this->interm_buffer_; this->interm_buffer_ = NULL;}
+    if(this->tmp_param_buffer_){delete this->tmp_param_buffer_; this->tmp_param_buffer_ = NULL;}
+    if(this->col_buffer_){ delete this->col_buffer_; this->col_buffer_ = NULL;}
+    if(this->bias_multiplier_){ delete this->bias_multiplier_; this->bias_multiplier_ = NULL;}
+
     cublasDestroy(this->cublasHandle);
 }
 
@@ -71,10 +73,11 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
     // deallocate existing workspace memory
     DataType tensorflow_dtype = DataTypeToEnum<Dtype>::v();
 
+    size_t total_bytes = (bytes/ sizeof(Dtype) + 1)*sizeof(Dtype);
     deallocate_workspace_mem();
     Tensor* tmp_ten = new Tensor();
 
-    Status can_allocate = this->context_->allocate_temp(tensorflow_dtype, TensorShape({bytes/sizeof(Dtype)}), tmp_ten);
+    Status can_allocate = this->context_->allocate_temp(tensorflow_dtype, TensorShape({total_bytes/sizeof(Dtype)}), tmp_ten);
     if(!TF_PREDICT_TRUE(can_allocate.ok())){
         this->own_workspace_data = NULL;
         return this->own_workspace_data;
@@ -86,10 +89,17 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::deallocate_workspace_mem() {
+    //AllocatorAttributes alloc_attrs;
+    //Allocator* allocator = this->context_->device()->GetAllocator(alloc_attrs);
+    //AllocatorStats stats;
+    //allocator->GetStats(&stats);
+    //printf("Bytes in use before deallocate %d\n",stats.bytes_in_use);
+
     if (this->own_workspace_data != NULL){
         delete this->own_workspace_tensor;
         this->own_workspace_data = NULL;
     }
+
 }
 
 template <typename Dtype>
@@ -102,23 +112,23 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
       tmp_shape.AddDim(dm);
     }
 
-    Tensor* orig_ten_w = (Tensor*) *(this->param_buffer_w_);
+    Tensor* orig_ten_w = (Tensor*) this->param_buffer_w_;
     CHECK(orig_ten_w->shape().IsSameSize(tmp_shape));
 
-    Tensor* orig_ten_mu1 = (Tensor*) *(this->param_buffer_mu1_);
+    Tensor* orig_ten_mu1 = (Tensor*) this->param_buffer_mu1_;
     CHECK(orig_ten_mu1->shape().IsSameSize(tmp_shape));
 
 
-    Tensor* orig_ten_mu2 = (Tensor*) *(this->param_buffer_mu2_);
+    Tensor* orig_ten_mu2 = (Tensor*) this->param_buffer_mu2_;
     CHECK(orig_ten_mu2->shape().IsSameSize(tmp_shape));
 
 
-    Tensor* orig_ten_sigma = (Tensor*) *(this->param_buffer_sigma_);
+    Tensor* orig_ten_sigma = (Tensor*) this->param_buffer_sigma_;
     CHECK(orig_ten_sigma->shape().IsSameSize(tmp_shape));
 
 
     if (this->bias_term_) {
-        Tensor* orig_ten_bias = (Tensor*) *(this->param_buffer_bias_);
+        Tensor* orig_ten_bias = (Tensor*) this->param_buffer_bias_;
         CHECK(orig_ten_bias->shape().IsSameSize(tmp_shape));
 
     }
@@ -140,18 +150,20 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
 
 
     // we use actual (learnable) sigma parameter when computing kernels so connect that param with the sigma for aggregation
-    reinterpret_cast<DAUKernelParamsTFGPU<Dtype>* >(kernel_param)->sigma_ = make_shared<Tensor*>((Tensor*)(*this->param_buffer_sigma_));
+    DAUKernelParamsTFGPU<Dtype>* kernel_param_tf_gpu = reinterpret_cast<DAUKernelParamsTFGPU<Dtype>* >(kernel_param);
+    if(kernel_param_tf_gpu->sigma_) delete kernel_param_tf_gpu->sigma_;
+    kernel_param_tf_gpu->sigma_ = (Tensor*) this->param_buffer_sigma_;
     
 }
 
 template <typename Dtype>
 vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_shape, const vector<int>& top_shape) {
-    //TODO IMPLEMENT CUSTOM OP_REQUIRES_OK MACRO THAT DOES NOT RETURN BUT SETS CtxFailureWithWarning.. replace CHECK
     // call parent to compute all the shape variables
+
+    //Get tensorflow type from Dtype
     DataType tensorflow_dtype = DataTypeToEnum<Dtype>::v();
 
     const vector<int> new_top_shape = BaseDAUConvLayer<Dtype>::Reshape(bottom_shape, top_shape);
-
 
     const int max_width = std::max(this->width_out_,this->width_);
     const int max_height = std::max(this->height_out_,this->height_);
@@ -316,27 +328,44 @@ DAUKernelComputeTF<Dtype>::~DAUKernelComputeTF(){
         delete this->param_buffers_[i];
 }
 
+template <typename Dtype>
+DAUKernelParamsTF<Dtype>::~DAUKernelParamsTF(){
+    if(this->weight_){delete this->weight_; this->weight_ = NULL;}
+    if(this->mu1_){delete this->mu1_; this->mu1_ = NULL;}
+    if(this->mu2_){delete this->mu2_; this->mu2_ = NULL;}
+}
+
+template <typename Dtype>
+DAUKernelOutputTF<Dtype>::~DAUKernelOutputTF(){
+    if(this->weight_){ delete this->weight_; this->weight_ = NULL;}
+    if(this->d_error_){ delete this->d_error_; this->d_error_ = NULL;}
+    if(this->d_params_){delete this->d_params_; this->d_params_ = NULL;}
+}
+
+
+
 
 template <typename Dtype>
 void DAUKernelComputeTF<Dtype>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w){
 
     DataType tensorflow_dtype = DataTypeToEnum<Dtype>::v();
+
     this->num_in_channels = num_in_channels;
     this->num_out_channels = num_out_channels;
     this->num_gauss = num_gauss;
     this->kernel_h = kernel_h;
     this->kernel_w = kernel_w;
+
     // allocate and prepare temporary buffers for kernels
-    // removed copyFrom, always allocates new memory
     for (int i = 0; i < this->kernels_buffers_.size(); i++)
         delete this->kernels_buffers_[i];
 
     this->kernels_buffers_.resize(5);
     for (int i = 0; i < 5; i++){
         Tensor* tmp_ten = new Tensor();
-        if(this->context_ == NULL)printf("Context is null\n");
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({num_in_channels, num_gauss, num_out_channels, kernel_h*kernel_w}), tmp_ten));
         this->kernels_buffers_[i] = tmp_ten;
+
     }
 
 
@@ -350,7 +379,6 @@ void DAUKernelComputeTF<Dtype>::reshape(int num_in_channels, int num_out_channel
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1, num_in_channels, num_gauss, num_out_channels}), tmp_ten));
         this->param_buffers_[i] = tmp_ten;
     }
-
     // pre-computed offset indexes for batched sums (when using caffe_gpu_sum)
     this->create_precompute_index(num_in_channels * num_gauss * num_out_channels, kernel_h * kernel_w);
 
@@ -358,10 +386,10 @@ void DAUKernelComputeTF<Dtype>::reshape(int num_in_channels, int num_out_channel
 
 template <typename Dtype>
 void DAUKernelParamsTF<Dtype>::initialize_params(Tensor w, Tensor mu1, Tensor mu2, Tensor sigma){
-    this->weight_ = make_shared<Tensor*>(&w);
-    this->mu1_ = make_shared<Tensor*>(&mu1);
-    this->mu2_ = make_shared<Tensor*>(&mu2);
-    this->sigma_ = make_shared<Tensor*>(&sigma);
+    this->weight_ = &w;
+    this->mu1_ = &mu1;
+    this->mu2_ = &mu2;
+    this->sigma_ = &sigma;
 
 }
 
@@ -372,50 +400,42 @@ void DAUKernelParamsTF<Dtype>::reshape(int num_in_channels, int num_out_channels
 
     int reshape_total_elements = num_in_channels*num_out_channels*num_gauss;
     
-    if (!this->weight_ || (*this->weight_)->NumElements() != reshape_total_elements){
+    if (!this->weight_ || (this->weight_)->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), tmp_ten));
-        if(this->weight_) this->weight_.reset();
-        this->weight_ = make_shared<Tensor*>(tmp_ten);
+        if(this->weight_) delete this->weight_;
+        this->weight_ = tmp_ten;
     }else{
-        Tensor* tmp_ten = *(this->weight_);
+        Tensor* tmp_ten = (this->weight_);
         CHECK(tmp_ten->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
-        //if(!correct_copy) printf("Failed reshape kernelParams\n");
     }
-    if (!this->mu1_ || (*this->mu1_)->NumElements() != reshape_total_elements){
+    if (!this->mu1_ || (this->mu1_)->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), tmp_ten));
-        if(this->mu1_) this->mu1_.reset();
-        this->mu1_ = make_shared<Tensor*>(tmp_ten);
+        if(this->mu1_) delete this->mu1_;
+        this->mu1_ = tmp_ten;
     }else{
-        Tensor* tmp_ten = *this->mu1_;
+        Tensor* tmp_ten = this->mu1_;
         CHECK(tmp_ten->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
-        //if(!correct_copy) printf("Failed reshape kernelParams\n");
     }
-    if (!this->mu2_ || (*this->mu2_)->NumElements() != reshape_total_elements){
+    if (!this->mu2_ || (this->mu2_)->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), tmp_ten));
-        if(this->mu2_) this->mu2_.reset();
-        this->mu2_ = make_shared<Tensor*>(tmp_ten);
+        if(this->mu2_) delete this->mu2_;
+        this->mu2_ = tmp_ten;
     }else{
-        Tensor* tmp_ten = *this->mu2_;
+        Tensor* tmp_ten = this->mu2_;
         CHECK(tmp_ten->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
-        //if(!correct_copy) printf("Failed reshape kernelParams\n");
     }
-    if (!this->sigma_ || (*this->sigma_)->NumElements() != reshape_total_elements){
+    if (!this->sigma_ || (this->sigma_)->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,num_in_channels, num_gauss, num_out_channels}), tmp_ten));
-        if(this->sigma_) this->sigma_.reset();
-        this->sigma_ = make_shared<Tensor*>(tmp_ten);
+        if(this->sigma_) delete this->sigma_;
+        this->sigma_ = tmp_ten;
 
     }else{
-        Tensor* tmp_ten = *this->sigma_;
+        Tensor* tmp_ten = this->sigma_;
         CHECK(tmp_ten->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = tmp_ten->CopyFrom(*tmp_ten,TensorShape({1, num_in_channels, num_gauss, num_out_channels}));
-        //if(!correct_copy) printf("Failed reshape kernelParams\n");
     }
 
 }
@@ -429,45 +449,41 @@ void DAUKernelOutputTF<Dtype>::reshape(int num_in_channels, int num_out_channels
     
     if(this->weight_ == NULL || this->weight_->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
-        delete this->weight_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), tmp_ten));
+        if(this->weight_) delete this->weight_;
         this->weight_=tmp_ten;
-
-
     }else{
         CHECK(this->weight_->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = this->weight_->CopyFrom(*this->weight_, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}));
-        //if(!correct_copy) printf("Failed reshape kernelOutput\n");
     }
 
     if(this->d_error_ == NULL || this->d_error_->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
-        delete this->d_error_;
         OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), tmp_ten));
+        if(this->d_error_) delete this->d_error_;
         this->d_error_=tmp_ten;
-
     }else{
         CHECK(this->d_error_->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = this->d_error_->CopyFrom(*this->d_error_, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}));
-        //if(!correct_copy) printf("Failed reshape kernelOutput\n");
     }
 
     if(this->d_params_ == NULL || this->d_params_->NumElements() != reshape_total_elements){
         Tensor* tmp_ten = new Tensor();
-        delete this->d_params_;
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}), tmp_ten));
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({4, num_in_channels, num_gauss * num_out_channels, kernel_h * kernel_w}), tmp_ten));
+        if(this->d_params_) delete this->d_params_;
         this->d_params_=tmp_ten;
-
     }else{
-        CHECK(this->d_params_->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
-        //bool correct_copy = this->d_params_->CopyFrom(*this->d_params_, TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w}));
-        //if(!correct_copy) printf("Failed reshape kernelOutput\n");
+        CHECK(this->d_params_->shape().IsSameSize(TensorShape({4, num_in_channels, num_gauss * num_out_channels, kernel_h * kernel_w})));
     }
     
 }
 
 template DAUKernelComputeTF<float>::~DAUKernelComputeTF();
 template DAUKernelComputeTF<double>::~DAUKernelComputeTF();
+
+template DAUKernelParamsTF<float>::~DAUKernelParamsTF();
+template DAUKernelParamsTF<double>::~DAUKernelParamsTF();
+
+template DAUKernelOutputTF<float>::~DAUKernelOutputTF();
+template DAUKernelOutputTF<double>::~DAUKernelOutputTF();
 
 template void DAUKernelComputeTF<float>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w);
 template void DAUKernelComputeTF<double>::reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w);
@@ -484,28 +500,25 @@ template void DAUKernelOutputTF<double>::reshape(int num_in_channels, int num_ou
 
 template <typename Dtype>
 void DAUKernelComputeTF<Dtype>::create_precompute_index(const int index_size, const int kernel_size) {
-
-    Tensor* tmp_ten = new Tensor();
+    DataType tensorflow_dtype = DataTypeToEnum<int32_t>::v();
+    Tensor* tmp_ten;
     if(!this->tmp_precomp_index_ || this->tmp_precomp_index_->NumElements() != index_size+1){
-
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_INT32, TensorShape({1, 1, 1,index_size + 1}), tmp_ten));
+        tmp_ten  = new Tensor();
+        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({1, 1, 1,index_size + 1}), tmp_ten));
+        if(this->tmp_precomp_index_) delete this->tmp_precomp_index_;
         this->tmp_precomp_index_=tmp_ten;
 
     }else{
-        bool correct_copy = tmp_precomp_index_->CopyFrom(*tmp_precomp_index_, TensorShape({1, 1, 1, index_size + 1}));
-        if(!correct_copy) printf("Failed reshape create_precompute_index\n");
+        CHECK(this->tmp_precomp_index_->shape().IsSameSize(TensorShape({1, 1, 1, index_size + 1})));
         tmp_ten = (this->tmp_precomp_index_);
     }
 
-
-    auto flt = tmp_ten->flat<int32_t>();
-    int* flt_data = reinterpret_cast<int*>(flt.data());
-    int* tmp_buffer;
-    tmp_buffer = new int[tmp_precomp_index_->NumElements()];
-    tmp_buffer[0] = 0;
+    int32_t* flt_data = reinterpret_cast<int32_t*>(tmp_ten->flat<int32_t>().data());
+    int32_t* tmp_buffer = new int32_t[tmp_precomp_index_->NumElements()];
+    tmp_buffer[0] = (int32_t) 0;
     for (int i = 0; i < this->tmp_precomp_index_->NumElements()-1;i++)
-        tmp_buffer[i+1] = kernel_size * (i+1);
-    CUDA_CHECK(cudaMemcpy(flt_data,tmp_buffer,this->tmp_precomp_index_->NumElements()*sizeof(Dtype), cudaMemcpyHostToDevice ));
+        tmp_buffer[i+1] = (int32_t) kernel_size * (i+1);
+    CUDA_CHECK(cudaMemcpy(flt_data,tmp_buffer,this->tmp_precomp_index_->NumElements()*sizeof(int32_t), cudaMemcpyHostToDevice ));
     delete[] tmp_buffer;
 
 }
