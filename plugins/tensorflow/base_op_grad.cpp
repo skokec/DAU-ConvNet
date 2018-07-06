@@ -24,8 +24,6 @@ REGISTER_OP("BaseOpGrad")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
         .Attr("num_output : int = 64")
-
-        .Attr("bias_term: bool = false")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
         .Attr("stride: int = 1")
@@ -36,7 +34,8 @@ REGISTER_OP("BaseOpGrad")
         .Attr("component_border_bound: int = 4")
         .Attr("sigma_lower_bound: float = 0.3")
         .Attr("merge_iteration_step: int = 0")
-        .Attr("merge_threshold: int = 1");
+        .Attr("merge_threshold: int = 1")
+        .Attr("unit_testing: bool = false");
 //TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
 template<typename Device, typename Dtype>
 class BaseOpGradOp : public OpKernel {
@@ -45,7 +44,6 @@ public:
         int number_units_x;
         int number_units_y;
         int num_output;
-        bool bias_term;
         int kernel_size;
         int pad;
         int stride;
@@ -59,7 +57,6 @@ public:
         int merge_threshold;
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
-        OP_REQUIRES_OK(context, context->GetAttr("bias_term", &bias_term));
         OP_REQUIRES_OK(context, context->GetAttr("num_output", &num_output));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
@@ -72,13 +69,13 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("sigma_lower_bound", &sigma_lower_bound));
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
-
+        OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
-        dau_conv_settings.bias_term = bias_term;
+        dau_conv_settings.bias_term = false;
         dau_conv_settings.kernel_size = kernel_size;
         dau_conv_settings.pad = pad;
         dau_conv_settings.stride = stride;
@@ -144,6 +141,11 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(4, sigma->shape(), &grad_sigma));
 
 
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_weights->flat<Dtype>().data()),0, grad_weights->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu1->flat<Dtype>().data()),0, grad_mu1->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu2->flat<Dtype>().data()),0, grad_mu2->NumElements() * sizeof(Dtype)));
+        //CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype)));
+
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
@@ -168,8 +170,7 @@ public:
         //cublasSetStream(handle, stream);
         //TODO Get stream from context and add it to handle..
 
-
-        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context);
+        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
@@ -206,13 +207,13 @@ public:
 
 
         tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
-                              {true, true, true, true, true});
+                              {true, true, true, false, false});
 
 
     }
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;
-
+    bool unit_testing;
 };
 
 REGISTER_KERNEL_BUILDER(Name("BaseOpGrad").Device(DEVICE_GPU), BaseOpGradOp<GPUDevice, float>);

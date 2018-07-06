@@ -7,7 +7,8 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import sparse_ops
 
 print(os.getcwd())
-base_op_grad_module = tf.load_op_library('../../cmake-build-debug/plugins/tensorflow/libbase_op_grad.so')
+#base_op_grad_module = tf.load_op_library('../../cmake-build-debug/plugins/tensorflow/libbase_op_grad.so')
+base_op_grad_module = tf.load_op_library('./bin/libbase_op_grad.so')
 
 
 @ops.RegisterGradient("BaseOp")
@@ -28,6 +29,8 @@ def _base_op_grad_cc(op, grad):
     sigma_lower_bound = op.get_attr("sigma_lower_bound")
     merge_iteration_step = op.get_attr("merge_iteration_step")
     merge_threshold = op.get_attr("merge_threshold")
+    unit_testing = op.get_attr("unit_testing")
+
 
     return base_op_grad_module.base_op_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4],
                                             number_units_x=number_units_x,
@@ -43,7 +46,8 @@ def _base_op_grad_cc(op, grad):
                                             component_border_bound=component_border_bound,
                                             sigma_lower_bound=sigma_lower_bound,
                                             merge_iteration_step=merge_iteration_step,
-                                            merge_threshold=merge_threshold)
+                                            merge_threshold=merge_threshold,
+                                            unit_testing=unit_testing)
 
 
 # python impl.
