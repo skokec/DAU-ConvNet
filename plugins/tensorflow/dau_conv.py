@@ -114,17 +114,21 @@ class _DAUConvolution(object):
     def __init__(
             self,
             input_shape,
+            num_output,
             dau_units,
             max_kernel_size,
             padding,
             data_format=None,
             strides=None,
             num_dau_units_ignore=0,
+            unit_testing=False,
             name=None):
+        self.num_output = num_output
         self.padding = padding
         self.name = name
         self.dau_units = dau_units
         self.max_kernel_size = max_kernel_size
+        self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
             raise ValueError("Rank of convolution must be known")
@@ -163,12 +167,14 @@ class _DAUConvolution(object):
     def __call__(self, inp, w, mu1, mu2, sigma):  # pylint: disable=redefined-builtin
 
         # TODO: number_units should be infereed from W, but we need to fix to have size of W,mu1,mu2,sigma in [S, Gy, Gx, F] format
-        settings = dict(number_units_x=self.dau_units[0],
+        settings = dict(num_output=self.num_output,
+                        number_units_x=self.dau_units[0],
                         number_units_y=self.dau_units[1],
                         kernel_size=self.max_kernel_size[0],
                         pad=self.padding[0],
                         component_border_bound=1,
-                        sigma_lower_bound=0.01)
+                        sigma_lower_bound=0.01,
+                        unit_testing=self.unit_testing)
         return self.dau_conv_op(
             input=inp,
             weights=w,
@@ -211,6 +217,7 @@ class DAUConv(base.Layer):
                  sigma_constraint=None,
                  bias_constraint=None,
                  trainable=True,
+                 unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
         super(DAUConv, self).__init__(trainable=trainable, name=name,
@@ -244,6 +251,8 @@ class DAUConv(base.Layer):
         self.sigma_initializer = sigma_initializer
         self.sigma_regularizer = sigma_regularizer
         self.sigma_constraint = sigma_constraint
+
+        self.unit_testing = unit_testing
 
         self.input_spec = base.InputSpec(ndim=self.rank + 2)
 
@@ -330,11 +339,13 @@ class DAUConv(base.Layer):
 
         self._dau_convolution_op = _DAUConvolution(
             input_shape,
+            num_output=self.filters,
             dau_units=self.dau_units,
             max_kernel_size=self.max_kernel_size,
             padding=self.padding,
             strides=self.strides,
             num_dau_units_ignore=self.num_dau_units_ignore,
+            unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
         self.built = True
