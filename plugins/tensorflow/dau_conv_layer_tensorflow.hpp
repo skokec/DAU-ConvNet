@@ -36,11 +36,17 @@ public:
 	explicit DAUKernelParamsTF(OpKernelContext* context)
 		: context_(context){}
 
-	void reshape(int num_in_channels, int num_out_channels, int num_gauss);
+    virtual ~DAUKernelParamsTF();
+
+    void reshape(int num_in_channels, int num_out_channels, int num_gauss);
 
 	void initialize_params(Tensor w, Tensor mu1, Tensor mu2, Tensor sigma);
 
-	shared_ptr<Tensor*> weight_, mu1_, mu2_, sigma_; // CPU for setting (once) GPU for computing, except for sigma
+	Tensor* weight_=  nullptr;
+    Tensor* mu1_= nullptr;
+    Tensor* mu2_ = nullptr;
+    Tensor* sigma_= nullptr;
+    // CPU for setting (once) GPU for computing, except for sigma
 
 private:
 	OpKernelContext* context_ = NULL;
@@ -53,6 +59,8 @@ class DAUKernelOutputTF : public BaseDAUKernelOutput<Dtype> {
 public:
 	explicit DAUKernelOutputTF(OpKernelContext* context)
 	: context_(context){}
+
+    virtual ~DAUKernelOutputTF();
 
 	virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss, int kernel_h, int kernel_w);
 
@@ -106,10 +114,10 @@ public:
     explicit DAUKernelParamsTFGPU(OpKernelContext* context)
     : DAUKernelParamsTF<Dtype>(context), context_(context){}
 
-	virtual Dtype* weight() { Tensor* tmp_ten = *(this->weight_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat); }
-	virtual Dtype* mu1() { Tensor* tmp_ten = *(this->mu1_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat);}
-	virtual Dtype* mu2() { Tensor* tmp_ten = *(this->mu2_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat);}
-	virtual Dtype* sigma() { Tensor* tmp_ten = *(this->sigma_); auto flt = tmp_ten->flat<Dtype>(); auto dat = flt.data(); return reinterpret_cast<Dtype*>(dat); }
+	virtual Dtype* weight() {return reinterpret_cast<Dtype*>(this->weight_->template flat<Dtype>().data()); }
+	virtual Dtype* mu1() { return reinterpret_cast<Dtype*>(this->mu1_->template flat<Dtype>().data());}
+	virtual Dtype* mu2() { return reinterpret_cast<Dtype*>(this->mu2_->template flat<Dtype>().data());}
+	virtual Dtype* sigma() {return reinterpret_cast<Dtype*>(this->sigma_->template flat<Dtype>().data()); }
 
 private:
     OpKernelContext* context_;
@@ -156,10 +164,10 @@ template <typename Dtype>
 class DAUKernelParamsTFCPU : public DAUKernelParamsTF<Dtype> {
 public:
 
-	virtual Dtype* weight() { return reinterpret_cast<Dtype*>(( *this->weight_.get())->template flat<Dtype>().data());  }
-	virtual Dtype* mu1() { return reinterpret_cast<Dtype*>(( *this->mu1_.get())->template flat<Dtype>().data()); }
-	virtual Dtype* mu2() { return reinterpret_cast<Dtype*>(( *this->mu2_.get())->template flat<Dtype>().data()); }
-	virtual Dtype* sigma() { return reinterpret_cast<Dtype*>(( *this->sigma_.get())->template flat<Dtype>().data()); }
+	virtual Dtype* weight() { return reinterpret_cast<Dtype*>(this->weight_->template flat<Dtype>().data());  }
+	virtual Dtype* mu1() { return reinterpret_cast<Dtype*>(this->mu1_->template flat<Dtype>().data()); }
+	virtual Dtype* mu2() { return reinterpret_cast<Dtype*>(this->mu2_->template flat<Dtype>().data()); }
+	virtual Dtype* sigma() { return reinterpret_cast<Dtype*>(this->sigma_->template flat<Dtype>().data()); }
 };
 
 template <typename Dtype>
@@ -231,19 +239,18 @@ public:
 	void set_processing_on_gpu(bool do_on_gpu) { do_on_gpu_ = do_on_gpu; }
 
 	// parameters to learn
-	shared_ptr<const Tensor* > param_buffer_w_;
-	shared_ptr<const Tensor* > param_buffer_mu1_;
-	shared_ptr<const Tensor* > param_buffer_mu2_;
-	shared_ptr<const Tensor* > param_buffer_sigma_;
-	shared_ptr<const Tensor* > param_buffer_bias_;
-    shared_ptr<const Tensor* > param_buffer_w_grad;
-    shared_ptr<const Tensor* > param_buffer_mu1_grad;
-    shared_ptr<const Tensor* > param_buffer_mu2_grad;
-    shared_ptr<const Tensor* > param_buffer_sigma_grad;
-    shared_ptr<const Tensor* > param_buffer_bias_grad;
+	const Tensor* param_buffer_w_;
+	const Tensor* param_buffer_mu1_;
+	const Tensor* param_buffer_mu2_;
+	const Tensor*param_buffer_sigma_;
+	const Tensor* param_buffer_bias_;
+    const Tensor* param_buffer_w_grad;
+    const Tensor* param_buffer_mu1_grad;
+    const Tensor* param_buffer_mu2_grad;
+    const Tensor* param_buffer_sigma_grad;
+    const Tensor* param_buffer_bias_grad;
 
     OpKernelContext* context_ = NULL;
-	Tensor* allocation_test = NULL;
 	cublasHandle_t cublasHandle;
 
     bool is_forward_op;
@@ -254,19 +261,20 @@ protected:
 
 	virtual bool update_prefiltering_kernels(cudaStream_t stream);
 
-    virtual Dtype* param_w() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_w_.get())->flat<Dtype>().data()); }
-    virtual Dtype* param_mu1() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu1_.get())->flat<Dtype>().data());}
-    virtual Dtype* param_mu2() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu2_.get())->flat<Dtype>().data());}
-    virtual Dtype* param_sigma() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_sigma_.get())->flat<Dtype>().data());}
-    virtual Dtype* param_bias() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_.get())->flat<Dtype>().data());}
+    virtual Dtype* param_w() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_w_)->flat<Dtype>().data()); }
+    virtual Dtype* param_mu1() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_mu1_)->flat<Dtype>().data());}
+    virtual Dtype* param_mu2() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_mu2_)->flat<Dtype>().data());}
+    virtual Dtype* param_sigma() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_sigma_)->flat<Dtype>().data());}
+    //virtual Dtype* param_bias() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_.get())->flat<Dtype>().data());}
+    virtual Dtype* param_bias() {return NULL;}
 
 
-    virtual Dtype* param_w_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_w_grad.get())->flat<Dtype>().data());}
-    virtual Dtype* param_mu1_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu1_grad.get())->flat<Dtype>().data());}
-    virtual Dtype* param_mu2_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_mu2_grad.get())->flat<Dtype>().data());}
-    virtual Dtype* param_sigma_grad(){return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_sigma_grad.get())->flat<Dtype>().data());}
-    virtual Dtype* param_bias_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_grad.get())->flat<Dtype>().data());}
-
+    virtual Dtype* param_w_grad() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_w_grad)->flat<Dtype>().data());}
+    virtual Dtype* param_mu1_grad() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_mu1_grad)->flat<Dtype>().data());}
+    virtual Dtype* param_mu2_grad() {return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_mu2_grad)->flat<Dtype>().data());}
+    virtual Dtype* param_sigma_grad(){return reinterpret_cast<Dtype*>( ((Tensor*) param_buffer_sigma_grad)->flat<Dtype>().data());}
+    //virtual Dtype* param_bias_grad() {return reinterpret_cast<Dtype*>(((Tensor*) *param_buffer_bias_grad.get())->flat<Dtype>().data());}
+    virtual Dtype* param_bias_grad() {return NULL;}
 
     // remaining intermediate/temporary buffers
     virtual Dtype* temp_bwd_gradients() {return reinterpret_cast<Dtype*>(bwd_gradients_->flat<Dtype>().data()); }
@@ -275,23 +283,17 @@ protected:
     virtual Dtype* temp_col_buffer() {return reinterpret_cast<Dtype*>(col_buffer_->flat<Dtype>().data()); }
     virtual Dtype* temp_bias_multiplier() {return reinterpret_cast<Dtype*>(bias_multiplier_->flat<Dtype>().data()); }
 
-	
-
 	virtual void* allocate_workspace_mem(size_t bytes);
 	virtual void deallocate_workspace_mem();
 
 	// accumulated gradients
 	Tensor* bwd_gradients_ = NULL;
-
-
 	// additional buffers
 	Tensor* interm_buffer_ = NULL; // GPU only
 	Tensor* tmp_param_buffer_ = NULL; // GPU and CPU
 
-
 	Tensor* col_buffer_=NULL; // CPU only
 	Tensor* bias_multiplier_=NULL; // GPU and CPU
-
 
 	// workspace memory that we have allocated
 	void* own_workspace_data = NULL;

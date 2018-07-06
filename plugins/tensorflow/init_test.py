@@ -23,16 +23,19 @@ class baseOpOpTest(unittest.TestCase):
             n = 4
             m = 5
             print("BASE OP RANDOM GRAD TEST")
-            x = tf.placeholder(tf.float32, shape = (16,32,64,64))
-            W = tf.placeholder(tf.float32, shape = (1,32,4,64))
-            mu1 = tf.placeholder(tf.float32, shape = (1,32,4,64))
-            mu2 = tf.placeholder(tf.float32, shape = (1,32,4,64))
-            sigma = tf.placeholder(tf.float32, shape = (1,32,4,64))
-            res_base_op = base_op_module.base_op(x, W, mu1, mu2, sigma)
-            grad_x_base_op = tf.gradients(res_base_op, [x, W, mu1, mu2, sigma])
+            N,S,F,W,H,G = 16,32,64,64,64,4
+            #N,S,F,W,H,G = 16,32,64,123,123,4
+
+            x = tf.placeholder(tf.float32, shape = (N,S,H,W))
+            w = tf.placeholder(tf.float32, shape = (1,S,G,F))
+            mu1 = tf.placeholder(tf.float32, shape = (1,S,G,F))
+            mu2 = tf.placeholder(tf.float32, shape = (1,S,G,F))
+            sigma = tf.placeholder(tf.float32, shape = (1,S,G,F))
+            res_base_op = base_op_module.base_op(x, w, mu1, mu2, sigma)
+            grad_x_base_op = tf.gradients(res_base_op, [x, w, mu1, mu2, sigma])
 
 
-            for i in range(5):
+            for i in range(50):
                 #x_rand = np.random.randint(10, size = (n, 1))
                 #W_rand = np.random.randint(10, size = (m, n))
                 #result_rand = np.dot(W_rand, x_rand)
@@ -42,15 +45,15 @@ class baseOpOpTest(unittest.TestCase):
                 #  .Input("sigma: float")
 
                 #nchw
-                x_rand = np.random.rand(16,32,64,64)
+                x_rand = np.random.rand(N,S,H,W)
                 #1,conv_in_channels_ == from input, units_per_channel, conv_out_channels_==num filters
-                W_rand = np.random.rand(1,32,4,64)
-                mu1_rand = np.random.rand(1,32,4,64)
-                mu2_rand = np.random.rand(1,32,4,64)
-                sigma_rand = np.ones((1,32,4,64))*0.5
+                W_rand = np.random.rand(1,S,G,F)
+                mu1_rand = np.random.rand(1,S,G,F)
+                mu2_rand = np.random.rand(1,S,G,F)
+                sigma_rand = np.ones((1,S,G,F))*0.5
 
                 t_start = time.time()
-                gradient_base_op = sess.run(grad_x_base_op, feed_dict = {x: x_rand, W: W_rand, mu1: mu1_rand, mu2: mu2_rand, sigma: sigma_rand})
+                gradient_base_op = sess.run(grad_x_base_op, feed_dict = {x: x_rand, w: W_rand, mu1: mu1_rand, mu2: mu2_rand, sigma: sigma_rand})
                 t_end = time.time()
                 print(t_end-t_start)
                 #print(len(gradient_base_op))
@@ -62,7 +65,7 @@ class baseOpOpTest(unittest.TestCase):
             n = 4
             m = 5
             print("BASE OP RANDOM TEST")
-            for i in range(5):
+            for i in range(50):
                 #x_rand = np.random.randint(10, size = (n, 1))
                 #W_rand = np.random.randint(10, size = (m, n))
                 #result_rand = np.dot(W_rand, x_rand)

@@ -88,11 +88,11 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
 
         dau_conv_settings.offsets_already_centered = true;
-        //TODO calculate from inputs
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
+        //bias handled by Tensorflow
         dau_conv_settings.bias_term = false;
         dau_conv_settings.kernel_size = kernel_size;
         dau_conv_settings.pad = pad;
@@ -113,35 +113,40 @@ public:
         DCHECK_EQ(5, context->num_inputs());
 
         // in_train is used only for merge_iteration_step, which is not setup.
+        /*
+        AllocatorAttributes alloc_attrs;
+        tensorflow::DeviceBase* device = context->device();
+        Allocator* allocator = context->device()->GetAllocator(alloc_attrs);
+        AllocatorStats stats;
+        allocator->GetStats(&stats);
+        printf("Bytes in use %d\n",stats.bytes_in_use);
+        */
+
         bool in_train = false;
 
         const Tensor* input;
-        context->input("input", &input);
         const Tensor* weights;
-        context->input("weights",&weights);
         const Tensor* mu1;
-        context->input("mu1",&mu1);
         const Tensor* mu2;
-        context->input("mu2",&mu2);
         const Tensor* sigma;
+
+        context->input("input", &input);
+        context->input("weights",&weights);
+        context->input("mu1",&mu1);
+        context->input("mu2",&mu2);
         context->input("sigma",&sigma);
 
 
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
 
-        if(dau_conv_settings.num_output != weights_shape.dim_size(3)){
-            dau_conv_settings.num_output = weights_shape.dim_size(3);
-            printf("Num output settings was set to an incorrect value, set the value to %d\n", dau_conv_settings.num_output);
-        }
 
         //Check if output size of parameters equals to specified number of outputs
-        /*
-        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(3));
-        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(3));
-        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(3));
-        DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(3));
-        */
+        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
+
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
@@ -174,7 +179,10 @@ public:
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
         tf_layer.is_forward_op = true;
+
+
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
+
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
 
@@ -182,27 +190,30 @@ public:
         std::vector<int> top_shape;
 
         top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(weights->dim_size(1));
+        top_shape.push_back(dau_conv_settings.num_output);
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
+
         std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
-        //for(int i : new_shape) printf("%d\n",i);
-        //printf(".........\n");
-        //for(int i : top_shape) printf("%d\n",i);
+
 
         //tf_layer forward_gpu implement..
 
         TensorShape output_shape;
         for(int i = 0; i< top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
 
+
         Tensor* output;
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+
+
         auto out_data = output->flat<Dtype>();
         Dtype* top_data = reinterpret_cast<Dtype*>(out_data.data());
 
         auto input_data = input->flat<Dtype>();
         const Dtype* bottom_data = reinterpret_cast<const Dtype*>(input_data.data());
+
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 

@@ -24,12 +24,13 @@ REGISTER_OP("BaseOpGrad")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
         .Attr("num_output : int = 64")
-        .Attr("bias_term: bool = true")
+
+        .Attr("bias_term: bool = false")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
         .Attr("stride: int = 1")
         .Attr("unit_normalization: bool = true")
-        .Attr("square_unit_normalization: bool = true")
+        .Attr("square_unit_normalization: bool = false")
         .Attr("mean_iteration_step: int = 1")
         .Attr("sigma_iteration_step: int = 1")
         .Attr("component_border_bound: int = 4")
@@ -73,7 +74,6 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
 
         dau_conv_settings.offsets_already_centered = true;
-        //TODO calculate from inputs
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
@@ -95,10 +95,18 @@ public:
 
     void Compute(OpKernelContext *context) override {
 
+
         DCHECK_EQ(6, context->num_inputs());
 
         // in_train is used only for merge_iteration_step, which is not setup.
         bool in_train = false;
+
+        AllocatorAttributes alloc_attrs;
+        tensorflow::DeviceBase* device = context->device();
+        Allocator* allocator = context->device()->GetAllocator(alloc_attrs);
+        AllocatorStats stats;
+        allocator->GetStats(&stats);
+        printf("Grad Bytes in use %d\n",stats.bytes_in_use);
 
         const Tensor *grad;
         context->input("grad", &grad);
@@ -117,8 +125,12 @@ public:
         TensorShape input_shape = input->shape();
         TensorShape weights_shape = weights->shape();
 
-        //DCHECK_EQ(input_shape.dim_size(0), weights_shape.dim_size(1));
-        //DCHECK_EQ(weights_shape.dim_size(0), grad.shape().dim_size(0));
+        //Check if output size of parameters equals to specified number of outputs
+        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
+
 
         // create output tensors
         Tensor *grad_input = NULL;
@@ -127,9 +139,10 @@ public:
         Tensor *grad_mu2 = NULL;
         Tensor *grad_sigma = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, weights_shape, &grad_weights));
-        OP_REQUIRES_OK(context, context->allocate_output(2, weights_shape, &grad_mu1));
-        OP_REQUIRES_OK(context, context->allocate_output(3, weights_shape, &grad_mu2));
-        OP_REQUIRES_OK(context, context->allocate_output(4, weights_shape, &grad_sigma));
+        OP_REQUIRES_OK(context, context->allocate_output(2, mu1->shape(), &grad_mu1));
+        OP_REQUIRES_OK(context, context->allocate_output(3, mu2->shape(), &grad_mu2));
+        OP_REQUIRES_OK(context, context->allocate_output(4, sigma->shape(), &grad_sigma));
+
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
@@ -160,10 +173,13 @@ public:
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
+
         tf_layer.is_forward_op = false;
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                      (Tensor *) sigma);
+
         tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
+
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
                             &dau_kernel_output, bottom_shape, in_train);
 
@@ -180,12 +196,6 @@ public:
         TensorShape output_shape;
         for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
 
-
-        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &grad_input));
-        auto out_data = grad_input->flat<Dtype>();
-        //backward pass does not depend on top data?
-        Dtype *top_data = reinterpret_cast<Dtype *>(out_data.data());
-
         // grad is top error since it is the error of the output of the layer
         const Dtype *top_error = reinterpret_cast<const Dtype *>(grad->flat<Dtype>().data());
 
@@ -195,11 +205,8 @@ public:
         Dtype *bottom_error = reinterpret_cast<Dtype *>(grad_input->flat<Dtype>().data());
 
 
-        tf_layer.Backward_gpu(top_data, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
+        tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
                               {true, true, true, true, true});
-
-        //Backward_gpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
-        //                          const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down );
 
 
     }
