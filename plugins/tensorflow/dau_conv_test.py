@@ -17,34 +17,7 @@ from tensorflow.python.ops import init_ops
 
 import pylab as plt
 
-class DAUMeanTest(init_ops.Initializer):
-    def __init__(self,tmp):
-        pass
-
-    def __call__(self, shape, dtype=None, partition_info=None):
-
-        # create values
-        vals = np.zeros(shape,dtype=np.float32)
-        for i in range(shape[3]):
-            vals[:,:,:,i] = np.random.rand()*2
-            #vals[:
-
-        #vals = tf.random_uniform(shape=shape,minval=-3, maxval=3,dtype=tf.float32)
-        #vals = tf.floor(vals)
-        #return vals
-        vals = np.random.rand(shape[0],shape[1],shape[2],shape[3])*4-2
-        vals = np.floor(vals*100) / 100
-        #print('DAUMeanTest size of means:',vals.shape)
-        return tf.convert_to_tensor(vals, np.float32)
-
-
-        #return tf.reshape(vals,[1,shape[0],shape[1]*shape[2],shape[3]])
-
-    def get_config(self):
-        return {}
-
-class DAUConvTest(unittest.TestCase):
-
+class DAUConvPython:
     def _offset_and_sum(self, x, w, mu1, mu2):
         S = w.shape[1]
         G = w.shape[2]
@@ -92,7 +65,7 @@ class DAUConvTest(unittest.TestCase):
         return y
 
 
-    def _forward_cpu(self, x, w, mu1, mu2, sigma):
+    def forward_cpu(self, x, w, mu1, mu2, sigma):
         N = x.shape[0]
         S = x.shape[1]
 
@@ -188,7 +161,7 @@ class DAUConvTest(unittest.TestCase):
                             access_off_y = np.int32(offset_y_int + dy + padding)
 
                             output[0,s,g,f] += np.sum(np.multiply(x_pad[:,s,access_off_y:height_out + access_off_y, access_off_x:width_out + access_off_x],
-                                                                 error[:,f,:,:])) * interpol_w
+                                                                  error[:,f,:,:])) * interpol_w
         return output
 
     def _get_filters(self, sigma):
@@ -217,10 +190,10 @@ class DAUConvTest(unittest.TestCase):
 
         return (filter, deriv_w, deriv_mu1, deriv_mu2, deriv_sigma)
 
-    def _backward_cpu(self, x, error, w, mu1, mu2, sigma):
+    def backward_cpu(self, x, error, w, mu1, mu2, sigma, unit_testing=True):
 
         # we get back-propagated error by rotating offsets i.e. we just use negatives of offsets
-        backprop_error = self._forward_cpu(error,
+        backprop_error = self.forward_cpu(error,
                                            np.swapaxes(w, 1,3),
                                            np.swapaxes(-1 * mu1, 1,3),
                                            np.swapaxes(-1 * mu2, 1,3), sigma)
@@ -240,7 +213,7 @@ class DAUConvTest(unittest.TestCase):
                     x_w_blur[n,f,:,:] = correlate(x[n,f,:,:],weights=deriv_w,mode='constant')
 
             # then offset and sum element-wise
-            w_grad = self._offset_and_dot(x_w_blur,error,mu1,mu2, ignore_edge_gradients=True)
+            w_grad = self._offset_and_dot(x_w_blur,error,mu1,mu2, ignore_edge_gradients=unit_testing)
 
         if True:
             x_mu1_blur = np.zeros(x.shape,dtype=np.float32)
@@ -250,7 +223,7 @@ class DAUConvTest(unittest.TestCase):
                     x_mu1_blur[n,f,:,:] = correlate(x[n,f,:,:],weights=deriv_mu1,mode='constant')
 
             # then offset and sum element-wise
-            mu1_grad = self._offset_and_dot(x_mu1_blur,error,mu1,mu2, ignore_edge_gradients=True)
+            mu1_grad = self._offset_and_dot(x_mu1_blur,error,mu1,mu2, ignore_edge_gradients=unit_testing)
 
         if True:
             x_mu2_blur = np.zeros(x.shape,dtype=np.float32)
@@ -260,13 +233,16 @@ class DAUConvTest(unittest.TestCase):
                     x_mu2_blur[n,f,:,:] = correlate(x[n,f,:,:],weights=deriv_mu2,mode='constant')
 
             # then offset and sum element-wise
-            mu2_grad = self._offset_and_dot(x_mu2_blur,error,mu1,mu2, ignore_edge_gradients=True)
+            mu2_grad = self._offset_and_dot(x_mu2_blur,error,mu1,mu2, ignore_edge_gradients=unit_testing)
 
         # add multiplication with weight for mean gradients
         mu1_grad = np.multiply(mu1_grad, w)
         mu2_grad = np.multiply(mu2_grad, w)
 
         return (backprop_error, w_grad, mu1_grad, mu2_grad)
+
+class DAUConvTest(unittest.TestCase):
+
 
     def _assertMatrix(self, mat, gt_mat, variable_name, rel_tolerance=0.01, plot_difference=True):
         diff_abs = np.abs(mat - gt_mat)
@@ -303,9 +279,9 @@ class DAUConvTest(unittest.TestCase):
 
         self.assertTrue(avg_diff <= rel_tolerance or num_diff_rate <= 1e-2)
 
-    def test_DAUConvFixed(self):
+    def test_DAUConv(self):
 
-        for dd in range(300):
+        for i in range(10):
             N = 16
             W = 32
             H = 32
@@ -315,9 +291,6 @@ class DAUConvTest(unittest.TestCase):
             x_rand = np.random.rand(N,input_channels,H,W)
             #x_rand = np.ones((16,num_output,32,32),dtype=np.float32)
 
-            #nchw
-            #x_rand = tf.random_normal([16,32,64,64],dtype=tf.float32)
-            #x_rand_ = tf.ones([16,32,32,32],dtype=tf.float32)
             x = tf.placeholder(tf.float32, shape = x_rand.shape)
 
             op = DAUConv(filters=num_output,
@@ -328,9 +301,6 @@ class DAUConvTest(unittest.TestCase):
                          mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
                          mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
                          #weight_initializer=tf.constant_initializer(1,dtype=np.float32),
-                         #mu1_initializer=tf.random_uniform_initializer(minval=-2, maxval=1.8,dtype=tf.float32),
-                         #mu1_initializer=DAUMeanTest(0),
-                         #mu2_initializer=DAUMeanTest(0),
                          #mu1_initializer=tf.constant_initializer(0,dtype=np.float32),
                          #mu2_initializer=tf.constant_initializer(0,dtype=np.float32),
                          sigma_initializer=tf.constant_initializer(sigma),
@@ -355,6 +325,7 @@ class DAUConvTest(unittest.TestCase):
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
+
                 s.run(init)
                 t_start = time.time()
 
@@ -363,13 +334,11 @@ class DAUConvTest(unittest.TestCase):
                 t_end = time.time()
                 print(t_end-t_start)
 
-            print("min/max vals of m1: %f, %f" % (np.min(mu1), np.max(mu1)))
+            gt_fwd_vals = DAUConvPython().forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2,
+                                                      sigma=[sigma])
 
-            gt_fwd_vals = self._forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2,
-                                            sigma=[sigma])
-
-            gt_bwd_vals = self._backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2,
-                                             sigma=[sigma])
+            gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2,
+                                                       sigma=[sigma],unit_testing=True)
             # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
             r = r[:,:,:,:-2]
             r_grad[0] = r_grad[0][:,:,:,:-2]
@@ -383,29 +352,35 @@ class DAUConvTest(unittest.TestCase):
             self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
 
 
+    def test_DAUConvMemtest(self):
 
+        N = 16
+        W = 32
+        H = 32
+        input_channels = 32
+        num_output = 32
+        sigma = 0.5
+        x_rand = np.random.rand(N,input_channels,H,W)
 
-    def test_DAUConvFwdRandom(self):
-        return
-        results = []
-        for i in range(1):
-            #nchw
-            x_rand = tf.random_normal([16,32,64,64],dtype=tf.float32)
+        x = tf.placeholder(tf.float32, shape = x_rand.shape)
 
-            op = DAUConv(filters=64,
-                         dau_units=(2,2),
-                         max_kernel_size=7,
-                         use_bias=False,
-                         weight_initializer=tf.random_normal_initializer(stddev=0.1),
-                         #mu1_initializer=DAUGridMean(dau_units=(2,2), max_value=3, dau_unit_axis=2),
-                         #mu2_initializer=DAUGridMean(dau_units=(2,2), max_value=3, dau_unit_axis=1),
-                         mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3),
-                         mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3),
-                         sigma_initializer=tf.constant_initializer(0.5))
+        op = DAUConv(filters=num_output,
+                     dau_units=(2,2),
+                     max_kernel_size=9,
+                     use_bias=False,
+                     weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
+                     mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
+                     mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
+                     sigma_initializer=tf.constant_initializer(sigma),
+                     unit_testing=True)
 
-            result_i = op(x_rand)
+        result = op(x)
+        result_error = tf.random_normal([np.int32(x.shape[0]),num_output,
+                                         np.int32(x.shape[2]),
+                                         np.int32(x.shape[3])],dtype=tf.float32)
 
-            results.append(result_i)
+        var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2], grad_ys=result_error)
+
 
         init = tf.global_variables_initializer()
 
@@ -415,13 +390,15 @@ class DAUConvTest(unittest.TestCase):
         c.gpu_options.allow_growth = True
 
         with tf.Session(config=c) as s:
-            s.run(init)
-            t_start = time.time()
 
-            r = s.run(results)
+            for nn in range(1000):
+                s.run(init)
+                t_start = time.time()
 
-            t_end = time.time()
-            print(t_end-t_start)
+                r, r_error, r_grad, w, mu1, mu2  = s.run([result, result_error, var_grad, op.dau_weights, op.dau_mu1, op.dau_mu2], feed_dict = {x: x_rand})
+
+                t_end = time.time()
+                print(t_end-t_start)
 
 if __name__ == '__main__':
     unittest.main()
