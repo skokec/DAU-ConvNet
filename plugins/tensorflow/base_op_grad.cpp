@@ -175,7 +175,9 @@ public:
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
 
-        tf_layer.is_forward_op = false;
+        tf_layer.enable_forward(false);
+        tf_layer.enable_backward(true);
+
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                      (Tensor *) sigma);
 

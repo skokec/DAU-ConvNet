@@ -126,6 +126,8 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
     Tensor* orig_ten_sigma = (Tensor*) this->param_buffer_sigma_;
     CHECK(orig_ten_sigma->shape().IsSameSize(tmp_shape));
 
+    // TODO: check gradients for correct sizes (if they are not NULL)
+
 
     if (this->bias_term_) {
         Tensor* orig_ten_bias = (Tensor*) this->param_buffer_bias_;
@@ -179,25 +181,30 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         }
     }
 
-    // make sure col_buffer is big enough
-    if(!this->col_buffer_){
-        Tensor* tmp_ten = new Tensor();
-        OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_}), tmp_ten));
-        this->col_buffer_= tmp_ten;
-    }else{
-        CHECK(this->col_buffer_->shape().IsSameSize(TensorShape({this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_})));
-    }
+    if (this->enabled_fwd_op || this->enabled_bwd_op) {
+        // make sure col_buffer is big enough
+        if(!this->col_buffer_){
+            Tensor* tmp_ten = new Tensor();
+            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_}), tmp_ten));
+            this->col_buffer_= tmp_ten;
+        }else{
+            CHECK(this->col_buffer_->shape().IsSameSize(TensorShape({this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_})));
+        }
 
-    // use inter buffer for both fwd and bwd passes so allocate buffer with suitable size for both
-    if(!this->interm_buffer_){
-        Tensor* tmp_ten = new Tensor();
-        OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({this->batch_num_, std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_), max_height, max_width}), tmp_ten));
-        this->interm_buffer_= tmp_ten;
-    }else{
-        CHECK(this->interm_buffer_->shape().IsSameSize(TensorShape({this->batch_num_, std::max(this->conv_in_channels_ * this->NUM_K, this->conv_out_channels_), max_height, max_width})));
-    }
+        int interm_buf_size = 0;
+        if (this->enabled_fwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_out_channels_);
+        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_in_channels_ * this->NUM_K);
 
-    if(!this->is_forward_op) {
+        // use inter buffer for both fwd and bwd passes so allocate buffer with suitable size for both
+        if(!this->interm_buffer_){
+            Tensor* tmp_ten = new Tensor();
+            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({this->batch_num_, interm_buf_size, max_height, max_width}), tmp_ten));
+            this->interm_buffer_= tmp_ten;
+        }else{
+            CHECK(this->interm_buffer_->shape().IsSameSize(TensorShape({this->batch_num_, interm_buf_size, max_height, max_width})));
+        }
+    }
+    if (this->enabled_bwd_op) {
         if (!this->bwd_gradients_) {
             //bwd gradients buffer not defined
             Tensor *tmp_ten = new Tensor();

@@ -251,8 +251,7 @@ public:
 
     OpKernelContext* context_ = NULL;
 	cublasHandle_t cublasHandle;
-
-    bool is_forward_op;
+	
 protected:
 	virtual bool is_data_on_gpu() { return do_on_gpu_; }
 

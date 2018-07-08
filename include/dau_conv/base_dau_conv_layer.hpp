@@ -164,7 +164,8 @@ public:
 
     explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true)
             : cublas_handle(cublas_handle), handles_setup_(false),
-              ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered) {
+              ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered),
+              enabled_fwd_op(true), enabled_bwd_op(true) {
         this->aggregation.param = NULL;
         this->aggregation.kernels = NULL;
     }
@@ -191,6 +192,8 @@ public:
     virtual void Backward_gpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                               const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down );
 
+    void enable_forward(bool enable) { this->enabled_fwd_op = enable; }
+    void enable_backward(bool enable) { this->enabled_bwd_op = enable; }
 
 protected:
     virtual void compute_output_shape();
@@ -257,6 +260,9 @@ protected:
     Dtype* get_deriv_kernel_error(cudaStream_t stream = 0);
 
     void set_last_n_gauss_to_zero(Dtype* array, int num_gauss_zero);
+
+    bool enabled_fwd_op;
+    bool enabled_bwd_op;
 
     // TODO: add support for K=4 as well (K== number of parameter types i.e., K=4 for [w,mu1,mu2,sigma])
     // NOTE: allthough we set NUM_K=4 we also set last_k_optional=true which allows underlaying system to
@@ -341,12 +347,8 @@ protected:
         size_t filtered_images_sizes_;
         size_t filter_weights_sizes_;
         size_t filter_offsets_sizes_;
-
-        // this is used during backward pass for error back-propagation, but since we use forward pass for that we share
+        // NOTE: this is used during backward pass for error back-propagation, but since we use forward pass for that we share
         // the same buffer, however, size of buffer must accommodate both
-        size_t filtered_error_sizes_;
-        size_t filter_error_weights_sizes_;
-        size_t filter_error_offsets_sizes_;
     } buffer_fwd_;
 
     struct {

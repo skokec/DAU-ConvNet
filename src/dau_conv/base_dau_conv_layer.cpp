@@ -235,45 +235,70 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
     // prepare output buffer used in kernel pre-computing
     this->aggregation.kernels->reshape(1, 1, 1, this->aggregation.kernel_h_, this->aggregation.kernel_w_);
 
-
-    forward_obj.reset(new DAUConvNet::DAUConvForward<Dtype>(this->width_, this->height_, this->width_out_, this->height_out_, this->batch_num_, this->conv_in_channels_, this->conv_out_channels_, this->units_per_channel, this->use_interpolation_));
-    forward_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
-                                      &buffer_fwd_.filtered_images_sizes_,
-                                      &buffer_fwd_.filter_weights_sizes_,
-                                      &buffer_fwd_.filter_offsets_sizes_);
-
-    // check how much memory do we need for our custom kernels
-    backward_grad_obj.reset(new DAUConvNet::DAUConvBackward<Dtype>(this->width_, this->height_, this->width_out_, this->height_out_, this->batch_num_, this->conv_in_channels_, this->conv_out_channels_, this->units_per_channel, this->NUM_K, this->last_k_optional, this->use_interpolation_));
-
-    // WARNING: if this->kernel_w_ or this->kernel_h_ changes then memory will not be allocated properly so we should use here
-    //          maximum kernel_w_ and kernel_h_ allowed
-    backward_grad_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
-                                            &buffer_bwd_.filtered_images_sizes_,
-                                            &buffer_bwd_.error_image_sizes_,
-                                            &buffer_bwd_.filter_weights_sizes_,
-                                            &buffer_bwd_.filter_offsets_sizes_);
-    // for gradient aggregation
-
-    // for error back-propagation
-    // we use the same buffer as for forward pass but can be shared, just ensure buffer can accomodate both sizes
-    size_t filtered_error_sizes_, filter_error_weights_sizes_, filter_error_offsets_sizes_;
-
-    backward_backporp_obj.reset(new DAUConvNet::DAUConvForward<Dtype>(max_width, max_height, max_width, max_height, this->batch_num_, this->conv_out_channels_, this->conv_in_channels_, this->units_per_channel, this->use_interpolation_));
-    backward_backporp_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
-                                                &filtered_error_sizes_,
-                                                &filter_error_weights_sizes_,
-                                                &filter_error_offsets_sizes_);
-
-    buffer_bwd_.resized_top_for_bwd_sizes_ = 0;
-
-    if (this->width_out_ != this->width_ || this->height_out_ != this->height_) {
-        buffer_bwd_.resized_top_for_bwd_sizes_ = this->batch_num_ * this->conv_out_channels_* max_height*max_width * sizeof(Dtype);
+    if (enabled_fwd_op) {
+        forward_obj.reset(
+                new DAUConvNet::DAUConvForward<Dtype>(this->width_, this->height_, this->width_out_, this->height_out_,
+                                                      this->batch_num_, this->conv_in_channels_,
+                                                      this->conv_out_channels_, this->units_per_channel,
+                                                      this->use_interpolation_));
+        forward_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+                                          &buffer_fwd_.filtered_images_sizes_,
+                                          &buffer_fwd_.filter_weights_sizes_,
+                                          &buffer_fwd_.filter_offsets_sizes_);
+    } else {
+        buffer_fwd_.filtered_images_sizes_ = 0;
+        buffer_fwd_.filter_weights_sizes_ = 0;
+        buffer_fwd_.filter_offsets_sizes_ = 0;
     }
 
-    // this ensures that buffers will accomodate both dau_conv_forward functions one used for forward pass and the second one used of error back-propagation
-    buffer_fwd_.filtered_images_sizes_ = std::max(buffer_fwd_.filtered_images_sizes_, filtered_error_sizes_);
-    buffer_fwd_.filter_weights_sizes_ = std::max(buffer_fwd_.filter_weights_sizes_, filter_error_weights_sizes_);
-    buffer_fwd_.filter_offsets_sizes_ = std::max(buffer_fwd_.filter_offsets_sizes_, filter_error_offsets_sizes_);
+    if (enabled_bwd_op) {
+        // check how much memory do we need for our custom kernels
+        backward_grad_obj.reset(
+                new DAUConvNet::DAUConvBackward<Dtype>(this->width_, this->height_, this->width_out_, this->height_out_,
+                                                       this->batch_num_, this->conv_in_channels_,
+                                                       this->conv_out_channels_, this->units_per_channel, this->NUM_K,
+                                                       this->last_k_optional, this->use_interpolation_));
+
+        // WARNING: if this->kernel_w_ or this->kernel_h_ changes then memory will not be allocated properly so we should use here
+        //          maximum kernel_w_ and kernel_h_ allowed
+        backward_grad_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+                                                &buffer_bwd_.filtered_images_sizes_,
+                                                &buffer_bwd_.error_image_sizes_,
+                                                &buffer_bwd_.filter_weights_sizes_,
+                                                &buffer_bwd_.filter_offsets_sizes_);
+        // for gradient aggregation
+
+        // for error back-propagation
+        // we use the same buffer as for forward pass but can be shared, just ensure buffer can accomodate both sizes
+        size_t filtered_error_sizes_, filter_error_weights_sizes_, filter_error_offsets_sizes_;
+
+        backward_backporp_obj.reset(
+                new DAUConvNet::DAUConvForward<Dtype>(max_width, max_height, max_width, max_height, this->batch_num_,
+                                                      this->conv_out_channels_, this->conv_in_channels_,
+                                                      this->units_per_channel, this->use_interpolation_));
+        backward_backporp_obj->get_allocation_sizes(this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+                                                    &filtered_error_sizes_,
+                                                    &filter_error_weights_sizes_,
+                                                    &filter_error_offsets_sizes_);
+
+        buffer_bwd_.resized_top_for_bwd_sizes_ = 0;
+
+        if (this->width_out_ != this->width_ || this->height_out_ != this->height_) {
+            buffer_bwd_.resized_top_for_bwd_sizes_ =
+                    this->batch_num_ * this->conv_out_channels_ * max_height * max_width * sizeof(Dtype);
+        }
+
+        // this ensures that buffers will accomodate both dau_conv_forward functions one used for forward pass and the second one used of error back-propagation
+        buffer_fwd_.filtered_images_sizes_ = std::max(buffer_fwd_.filtered_images_sizes_, filtered_error_sizes_);
+        buffer_fwd_.filter_weights_sizes_ = std::max(buffer_fwd_.filter_weights_sizes_, filter_error_weights_sizes_);
+        buffer_fwd_.filter_offsets_sizes_ = std::max(buffer_fwd_.filter_offsets_sizes_, filter_error_offsets_sizes_);
+    } else {
+        buffer_bwd_.filtered_images_sizes_ = 0;
+        buffer_bwd_.error_image_sizes_ = 0;
+        buffer_bwd_.filter_weights_sizes_ = 0;
+        buffer_bwd_.filter_offsets_sizes_ = 0;
+        buffer_bwd_.resized_top_for_bwd_sizes_ = 0;
+    }
 
     // reduce over all workspace sizes to get a maximum to allocate / reallocate
     size_t total_workspace_fwd = 0;
@@ -344,20 +369,24 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
         //   - memory manegment should keep an index if valid pointer that are still using it and it should deallocate CUDA memory when there are no more valid pointers!!
 
 
+
         // TODO: make all memory align to 4x 32bit values
-        buffer_fwd_.filtered_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
-        buffer_fwd_.filter_offsets_and_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_);
-        buffer_fwd_.filter_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_);
-        buffer_fwd_.filter_offsets = reinterpret_cast<int*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_ + buffer_fwd_.filter_weights_sizes_);
+        if (enabled_fwd_op || enabled_bwd_op) {
+            // buffer_fwd_ is used for backward pass (for backproped error) so allocate for enabled_bwd_op==True
+            buffer_fwd_.filtered_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
+            buffer_fwd_.filter_offsets_and_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_);
+            buffer_fwd_.filter_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_);
+            buffer_fwd_.filter_offsets = reinterpret_cast<int*>(reinterpret_cast<char *>(workspaceData) + buffer_fwd_.filtered_images_sizes_ + buffer_fwd_.filter_weights_sizes_);
+        }
+        if (enabled_bwd_op) {
+            buffer_bwd_.filtered_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
+            buffer_bwd_.error_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_);
+            buffer_bwd_.filter_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_ + buffer_bwd_.error_image_sizes_);
+            buffer_bwd_.filter_offsets = reinterpret_cast<int*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_ + buffer_bwd_.error_image_sizes_ + buffer_bwd_.filter_weights_sizes_);
 
-
-        buffer_bwd_.filtered_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
-        buffer_bwd_.error_images = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_);
-        buffer_bwd_.filter_weights = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_ + buffer_bwd_.error_image_sizes_);
-        buffer_bwd_.filter_offsets = reinterpret_cast<int*>(reinterpret_cast<char *>(workspaceData) + buffer_bwd_.filtered_images_sizes_ + buffer_bwd_.error_image_sizes_ + buffer_bwd_.filter_weights_sizes_);
-
-        // we can reuse workspace data since it will not be used at the same time
-        buffer_bwd_.resized_top_for_bwd = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
+            // we can reuse workspace data since it will not be used at the same time
+            buffer_bwd_.resized_top_for_bwd = reinterpret_cast<Dtype*>(reinterpret_cast<char *>(workspaceData));
+        }
     }
 
     return new_top_shape;
