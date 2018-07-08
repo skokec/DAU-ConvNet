@@ -278,51 +278,99 @@ class DAUConv(base.Layer):
             self.weight_initializer = ZeroNLast(self.weight_initializer, last_num_to_zero=self.num_dau_units_ignore, axis=2)
 
 
+        self.dau_weights = None
+        self.dau_mu1 = None
+        self.dau_mu2 = None
+        self.dau_sigma = None
 
+    def set_dau_variables_manually(self, w = None, mu1 = None, mu2 = None, sigma = None):
+        """ Manually set w,mu1,mu2 and/or sigma variables with custom tensor. Call before build() or __call__().
+        The shape must match the expecated shape as returned by the get_dau_variable_shape(input_shape)
+        otherwise the build() function will fail."""
 
-    def build(self, input_shape):
-        input_shape = tensor_shape.TensorShape(input_shape)
+        if w is not None:
+            self.dau_weights = w
+
+        if mu1 is not None:
+            self.dau_mu1 = mu1
+
+        if mu2 is not None:
+            self.dau_mu2 = mu2
+
+        if sigma is not None:
+            self.dau_sigma = sigma
+
+    def _get_input_channel_axis(self):
         if self.data_format == 'channels_first':
             channel_axis = 1
         else:
             raise ValueError('Only `channels_first` supported, i.e., NCHW format.')
 
+        return channel_axis
+
+    def _get_input_channels(self, input_shape):
+        channel_axis = self._get_input_channel_axis()
+
         if input_shape[channel_axis].value is None:
             raise ValueError('The channel dimension of the inputs '
                              'should be defined. Found `None`.')
-        input_dim = input_shape[channel_axis].value
 
-        dau_params_shape_ = (input_dim, self.dau_units[0], self.dau_units[1], self.filters)
-        dau_params_shape = (1, input_dim, self.num_dau_units_all, self.filters)
+        return input_shape[channel_axis].value
 
-        self.dau_weights = self.add_variable(name='weights',
-                                             shape=dau_params_shape,
-                                             initializer=self.weight_initializer,
-                                             regularizer=self.weight_regularizer,
-                                             constraint=self.weight_constraint,
-                                             trainable=True,
-                                             dtype=self.dtype)
-        self.dau_mu1 = self.add_variable(name='mu1',
-                                             shape=dau_params_shape,
-                                             initializer=self.mu1_initializer,
-                                             regularizer=self.mu1_regularizer,
-                                             constraint=self.mu1_constraint,
-                                             trainable=True,
-                                             dtype=self.dtype)
-        self.dau_mu2 = self.add_variable(name='mu2',
-                                             shape=dau_params_shape,
-                                             initializer=self.mu2_initializer,
-                                             regularizer=self.mu2_regularizer,
-                                             constraint=self.mu2_constraint,
-                                             trainable=True,
-                                             dtype=self.dtype)
-        self.dau_sigma = self.add_variable(name='sigma',
-                                             shape=dau_params_shape,
-                                             initializer=self.sigma_initializer,
-                                             regularizer=self.sigma_regularizer,
-                                             constraint=self.sigma_constraint,
-                                             trainable=False,
-                                             dtype=self.dtype)
+    def get_dau_variable_shape(self, input_shape):
+        # get input
+        num_input_channels = self._get_input_channels(input_shape)
+
+        dau_params_shape_ = (num_input_channels, self.dau_units[0], self.dau_units[1], self.filters)
+        dau_params_shape = (1, num_input_channels, self.num_dau_units_all, self.filters)
+
+        return dau_params_shape
+
+    def build(self, input_shape):
+        input_shape = tensor_shape.TensorShape(input_shape)
+
+        dau_params_shape = self.get_dau_variable_shape(input_shape)
+        if self.dau_weights is None:
+            self.dau_weights = self.add_variable(name='weights',
+                                                 shape=dau_params_shape,
+                                                 initializer=self.weight_initializer,
+                                                 regularizer=self.weight_regularizer,
+                                                 constraint=self.weight_constraint,
+                                                 trainable=True,
+                                                 dtype=self.dtype)
+        elif np.any(self.dau_weights != dau_params_shape):
+            raise ValueError('Shape mismatch for variable `dau_weights`')
+        if self.dau_mu1 is None:
+            self.dau_mu1 = self.add_variable(name='mu1',
+                                                 shape=dau_params_shape,
+                                                 initializer=self.mu1_initializer,
+                                                 regularizer=self.mu1_regularizer,
+                                                 constraint=self.mu1_constraint,
+                                                 trainable=True,
+                                                 dtype=self.dtype)
+        elif np.any(self.dau_mu1 != dau_params_shape):
+            raise ValueError('Shape mismatch for variable `dau_mu1`')
+
+        if self.dau_mu2 is None:
+            self.dau_mu2 = self.add_variable(name='mu2',
+                                                 shape=dau_params_shape,
+                                                 initializer=self.mu2_initializer,
+                                                 regularizer=self.mu2_regularizer,
+                                                 constraint=self.mu2_constraint,
+                                                 trainable=True,
+                                                 dtype=self.dtype)
+        elif np.any(self.dau_mu2 != dau_params_shape):
+            raise ValueError('Shape mismatch for variable `dau_mu2`')
+        if self.dau_sigma is None:
+            self.dau_sigma = self.add_variable(name='sigma',
+                                                 shape=dau_params_shape,
+                                                 initializer=self.sigma_initializer,
+                                                 regularizer=self.sigma_regularizer,
+                                                 constraint=self.sigma_constraint,
+                                                 trainable=False,
+                                                 dtype=self.dtype)
+        elif np.any(self.dau_sigma != dau_params_shape):
+            raise ValueError('Shape mismatch for variable `dau_sigma`')
 
         if self.use_bias:
             self.bias = self.add_variable(name='bias',
@@ -334,8 +382,12 @@ class DAUConv(base.Layer):
                                           dtype=self.dtype)
         else:
             self.bias = None
+
+        input_channel_axis = self._get_input_channel_axis()
+        num_input_channels = self._get_input_channels(input_shape)
+
         self.input_spec = base.InputSpec(ndim=self.rank + 2,
-                                         axes={channel_axis: input_dim})
+                                         axes={input_channel_axis: num_input_channels})
 
         self._dau_convolution_op = _DAUConvolution(
             input_shape,
