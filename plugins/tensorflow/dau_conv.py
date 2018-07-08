@@ -181,12 +181,8 @@ class _DAUConvolution(object):
             mu1=mu1,
             mu2=mu2,
             sigma=sigma,
-            **settings
-            #strides=self.strides,
-            #padding=self.padding,
-            #data_format=self.data_format,
-            #name=self.name
-            )
+            name=self.name,
+            **settings)
 
 class DAUConv(base.Layer):
 
