@@ -199,8 +199,8 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         }
 
         int interm_buf_size = 0;
-        if (this->enabled_fwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_out_channels_);
-        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_in_channels_ * this->NUM_K);
+        if (this->enabled_fwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_in_channels_);
+        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_out_channels_ * this->NUM_K);
 
         // use inter buffer for both fwd and bwd passes so allocate buffer with suitable size for both
         if(!this->interm_buffer_){
