@@ -59,11 +59,11 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& sett
 template <typename Dtype>
 DAUConvLayerTensorflowGPU<Dtype>::~DAUConvLayerTensorflowGPU(){
     this->deallocate_workspace_mem();
-    if(this->bwd_gradients_){ delete this->bwd_gradients_; this->bwd_gradients_ = NULL;}
-    if(this->interm_buffer_){ delete this->interm_buffer_; this->interm_buffer_ = NULL;}
-    if(this->tmp_param_buffer_){delete this->tmp_param_buffer_; this->tmp_param_buffer_ = NULL;}
-    if(this->col_buffer_){ delete this->col_buffer_; this->col_buffer_ = NULL;}
-    if(this->bias_multiplier_){ delete this->bias_multiplier_; this->bias_multiplier_ = NULL;}
+    if(this->bwd_gradients_) delete this->bwd_gradients_;
+    if(this->interm_buffer_) delete this->interm_buffer_;
+    if(this->tmp_param_buffer_) delete this->tmp_param_buffer_;
+    if(this->col_buffer_) delete this->col_buffer_;
+    if(this->bias_multiplier_)delete this->bias_multiplier_;
 
     cublasDestroy(this->cublasHandle);
 }
@@ -241,53 +241,9 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
 template <typename Dtype>
 bool DAUConvLayerTensorflowGPU<Dtype>::update_prefiltering_kernels(cudaStream_t stream) {
-    bool updated = BaseDAUConvLayer<Dtype>::update_prefiltering_kernels(stream);
-
-
-    if (updated) {
-        //for debug write kernel with 1 only at center i.e. identity convolution kernel
-        if (0) {
-            DAUKernelOutputTF<Dtype>* kernels_output = reinterpret_cast<DAUKernelOutputTF<Dtype>*>(this->aggregation.kernels);
-
-            Dtype* gauss_kernel = TENSOR_DATA_PTR(kernels_output->weight_, Dtype);
-
-
-            int deriv_count = this->conv_in_channels_ * this->units_per_channel * this->conv_out_channels_ *
-                              this->aggregation.kernel_h_ * this->aggregation.kernel_w_;
-
-            auto flt = kernels_output->d_params_->template flat<Dtype>();
-            auto dat = flt.data();
-
-            Dtype* deriv_weight_kernel = reinterpret_cast<Dtype*>(dat) + 0 * deriv_count;
-            Dtype* deriv_mu1_kernel = reinterpret_cast<Dtype*>(dat) + 1 * deriv_count;
-            Dtype* deriv_mu2_kernel = reinterpret_cast<Dtype*>(dat) + 2 * deriv_count;
-            Dtype* deriv_sigma_kernel = reinterpret_cast<Dtype*>(dat) + 3 * deriv_count;
-
-            auto flt_err = kernels_output->d_error_->template flat<Dtype>();
-            auto dat_err = flt_err.data();
-            Dtype* deriv_error_kernel = reinterpret_cast<Dtype*>(dat_err);
-
-            int h_half = this->aggregation.kernel_h_/2;
-            int w_half = this->aggregation.kernel_w_/2;
-            int index = 0;
-            for (int j = -h_half; j <= h_half; ++j) {
-                for (int i = -w_half; i <= w_half; ++i) {
-
-                    Dtype val = (i == 0 && j == 0 ? 1 : 0);
-
-                    gauss_kernel[index] = val;
-                    deriv_weight_kernel[index] = val;
-                    deriv_mu1_kernel[index] = val;
-                    deriv_mu2_kernel[index] = val;
-                    deriv_sigma_kernel[index] = val;
-                    deriv_error_kernel[index] = val;
-
-                    index++;
-                }
-            }
-        }
-    }
+    return BaseDAUConvLayer<Dtype>::update_prefiltering_kernels(stream);
 }
+
 
 template DAUConvLayerTensorflowGPU<double>::~DAUConvLayerTensorflowGPU();
 template DAUConvLayerTensorflowGPU<float>::~DAUConvLayerTensorflowGPU();
