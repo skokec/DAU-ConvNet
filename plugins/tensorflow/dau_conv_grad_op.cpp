@@ -1,27 +1,26 @@
 #include "tensorflow/core/framework/op_kernel.h"
-#include "tensorflow/core/framework/tensor_shape.h"
-#include "tensorflow/core/platform/default/logging.h"
 #include "tensorflow/core/framework/shape_inference.h"
-//#include "tensorflow/stream_executor/stream.h"
-//#include "tensorflow/stream_executor/cuda/cuda_stream.h"
-//#include "tensorflow/core/util/cuda_launch_config.h"
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
-//#include "base_op.hpp"
-//using DAUConvNet::DAUConvSettings;
+
+
 using namespace tensorflow;
 
 using CPUDevice = Eigen::ThreadPoolDevice;
 using GPUDevice = Eigen::GpuDevice;
 
-//initialize with w, mu1, mu2, sigma
-REGISTER_OP("BaseOp")
-        .Input("input: float")
-        .Input("weights: float")
-        .Input("mu1: float")
-        .Input("mu2: float")
-        .Input("sigma: float")
-        .Output("output: float")
+REGISTER_OP("DAUConvGrad")
+        .Input("grad: float32") //error
+        .Input("input: float32") // input
+        .Input("weights: float32") // input
+        .Input("mu1: float32") // 4 inputi, w,mu12,sigma
+        .Input("mu2: float32") // 4 inputi, w,mu12,sigma
+        .Input("sigma: float32") // 4 inputi, w,mu12,sigma
+        .Output("grad_input: float32") //error naprej
+        .Output("grad_weights: float32") //
+        .Output("grad_mu1: float32") //
+        .Output("grad_mu2: float32") //
+        .Output("grad_sigma: float32")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
         .Attr("num_output : int = 64")
@@ -37,28 +36,11 @@ REGISTER_OP("BaseOp")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false");
-/*.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
-  shape_inference::ShapeHandle input_shape;
-  TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
-
-  shape_inference::ShapeHandle weight_shape;
-  TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 4, &weight_shape));
-
-  shape_inference::DimensionHandle output_rows = c->Dim(weight_shape, 0);
-
-  shape_inference::DimensionHandle input_rows = c->Dim(input_shape, 0);
-  shape_inference::DimensionHandle weight_cols = c->Dim(weight_shape, 1);
-  shape_inference::DimensionHandle merged;
-  TF_RETURN_IF_ERROR(c->Merge(input_rows, weight_cols, &merged));
-
-  c->set_output(0, c->Matrix(output_rows, 1));
-  return Status::OK();
-});*/
-
-template <typename Device, typename Dtype>
-class BaseOpOp : public OpKernel {
+//TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
+template<typename Device, typename Dtype>
+class DAUConvGradOp : public OpKernel {
 public:
-    explicit BaseOpOp(OpKernelConstruction* context) : OpKernel(context) {
+    explicit DAUConvGradOp(OpKernelConstruction *context) : OpKernel(context) {
         int number_units_x;
         int number_units_y;
         int num_output;
@@ -93,7 +75,6 @@ public:
         //num units per X and per Y
         dau_conv_settings.number_units.push_back(number_units_x);
         dau_conv_settings.number_units.push_back(number_units_y);
-        //bias handled by Tensorflow
         dau_conv_settings.bias_term = false;
         dau_conv_settings.kernel_size = kernel_size;
         dau_conv_settings.pad = pad;
@@ -109,38 +90,30 @@ public:
 
     }
 
-    void Compute(OpKernelContext* context) override {
+    void Compute(OpKernelContext *context) override {
 
-        DCHECK_EQ(5, context->num_inputs());
+
+        DCHECK_EQ(6, context->num_inputs());
 
         // in_train is used only for merge_iteration_step, which is not setup.
-        /*
-        AllocatorAttributes alloc_attrs;
-        tensorflow::DeviceBase* device = context->device();
-        Allocator* allocator = context->device()->GetAllocator(alloc_attrs);
-        AllocatorStats stats;
-        allocator->GetStats(&stats);
-        printf("Bytes in use %d\n",stats.bytes_in_use);
-        */
-
         bool in_train = false;
 
-        const Tensor* input;
-        const Tensor* weights;
-        const Tensor* mu1;
-        const Tensor* mu2;
-        const Tensor* sigma;
-
+        const Tensor *grad;
+        context->input("grad", &grad);
+        const Tensor *input;
         context->input("input", &input);
-        context->input("weights",&weights);
-        context->input("mu1",&mu1);
-        context->input("mu2",&mu2);
-        context->input("sigma",&sigma);
+        const Tensor *weights;
+        context->input("weights", &weights);
+        const Tensor *mu1;
+        context->input("mu1", &mu1);
+        const Tensor *mu2;
+        context->input("mu2", &mu2);
+        const Tensor *sigma;
+        context->input("sigma", &sigma);
 
-
-        const TensorShape& input_shape = input->shape();
-        const TensorShape& weights_shape = weights->shape();
-
+        // create input shape (inferred from the additional attribute `n`)
+        TensorShape input_shape = input->shape();
+        TensorShape weights_shape = weights->shape();
 
         //Check if output size of parameters equals to specified number of outputs
         DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
@@ -149,75 +122,88 @@ public:
         //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
 
 
+        // create output tensors
+        Tensor *grad_input = NULL;
+        Tensor *grad_weights = NULL;
+        Tensor *grad_mu1 = NULL;
+        Tensor *grad_mu2 = NULL;
+        Tensor *grad_sigma = NULL;
+        OP_REQUIRES_OK(context, context->allocate_output(1, weights_shape, &grad_weights));
+        OP_REQUIRES_OK(context, context->allocate_output(2, mu1->shape(), &grad_mu1));
+        OP_REQUIRES_OK(context, context->allocate_output(3, mu2->shape(), &grad_mu2));
+        OP_REQUIRES_OK(context, context->allocate_output(4, sigma->shape(), &grad_sigma));
+
+
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_weights->flat<Dtype>().data()),0, grad_weights->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu1->flat<Dtype>().data()),0, grad_mu1->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu2->flat<Dtype>().data()),0, grad_mu2->NumElements() * sizeof(Dtype)));
+        //CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype)));
+
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
-        //DAUConvNet::DAUConvSettings dau_conv_settings;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
         //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
+
         std::vector<int> bottom_shape;
-        for(int i = 0; i < input_shape.dims(); i++){
+        for (int i = 0; i < input_shape.dims(); i++) {
             bottom_shape.push_back(input_shape.dim_size(i));
         }
 
+
         cublasHandle_t handle;
         cublasCreate(&handle);
-        /*
-        const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
-                                                                                        -> stream()->implementation()
-                                                                                        ->CudaStreamMemberHack()) );
-        cublasSetStream(handle, (cudaStream_t)stream);
-         */
+        //const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
+        //                                                                                -> stream()->implementation()
+        //                                                                                ->CudaStreamMemberHack()) );
+        //cublasSetStream(handle, stream);
         //TODO Get stream from context and add it to handle..
 
-
-        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle,context);
+        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
 
         //set parameters from input tensors
         //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
-        tf_layer.enable_forward(true);
-        tf_layer.enable_backward(false);
 
+        tf_layer.enable_forward(false);
+        tf_layer.enable_backward(true);
 
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
+        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
+                                     (Tensor *) sigma);
 
+        tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
+        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
+                            &dau_kernel_output, bottom_shape, in_train);
 
-        //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
-
         top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(dau_conv_settings.num_output);
+        top_shape.push_back(weights->dim_size(1));
         top_shape.push_back(input_shape.dim_size(2));
         top_shape.push_back(input_shape.dim_size(3));
 
-
-        std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
-
+        tf_layer.Reshape(bottom_shape, top_shape);
 
         //tf_layer forward_gpu implement..
 
         TensorShape output_shape;
-        for(int i = 0; i< top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
+        for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
+
+        // grad is top error since it is the error of the output of the layer
+        const Dtype *top_error = reinterpret_cast<const Dtype *>(grad->flat<Dtype>().data());
+
+        const Dtype *bottom_data = reinterpret_cast<const Dtype *>(input->flat<Dtype>().data());
+
+        OP_REQUIRES_OK(context, context->allocate_output(0, input_shape, &grad_input));
+        Dtype *bottom_error = reinterpret_cast<Dtype *>(grad_input->flat<Dtype>().data());
 
 
-        Tensor* output;
-        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+        tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
+                              {true, true, true, false, false});
 
-
-        auto out_data = output->flat<Dtype>();
-        Dtype* top_data = reinterpret_cast<Dtype*>(out_data.data());
-
-        auto input_data = input->flat<Dtype>();
-        const Dtype* bottom_data = reinterpret_cast<const Dtype*>(input_data.data());
-
-
-        tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
     }
 private:
@@ -225,19 +211,4 @@ private:
     bool unit_testing;
 };
 
-#define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);
-
-//REGISTER_CPU(float);
-//REGISTER_CPU(int32);
-
-#ifdef GOOGLE_CUDA
-#define REGISTER_GPU(T) \
-REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_GPU), BaseOpOp<GPUDevice, T>);
-
-//type constraint is for constraining named attributes like "T"
-//REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU).TypeConstraint<T>("T"), BaseOpOp<GPUDevice, T>);
-
-
-REGISTER_GPU(float);
-//REGISTER_GPU(int32);
-#endif //google_cuda
+REGISTER_KERNEL_BUILDER(Name("DAUConvGrad").Device(DEVICE_GPU), DAUConvGradOp<GPUDevice, float>);

@@ -12,9 +12,9 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import init_ops
 
-import _base_op_grad
+import _dau_conv_grad_op
 
-base_op_module = tf.load_op_library('./bin/libbase_op.so')
+dau_conv_op_module = tf.load_op_library('./bin/libdau_conv_op.so')
 
 class DAUGridMean(init_ops.Initializer):
     """Initializer for DAU means/offsets to follow the grid-based pattern, equaly spaced in each dimension.
@@ -153,7 +153,7 @@ class _DAUConvolution(object):
                 raise ValueError("data_format must be \"NHWC\" or \"NCHW\".")
             self.strides = strides
             self.data_format = data_format
-            self.dau_conv_op = base_op_module.base_op
+            self.dau_conv_op = dau_conv_op_module.dau_conv
         elif conv_dims == 3:
             # not supported
             raise ValueError("Three dimensional DAUConv not supported - only two dimensions supported.")

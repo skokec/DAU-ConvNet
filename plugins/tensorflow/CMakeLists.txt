@@ -105,14 +105,14 @@ target_link_libraries(dau_conv_tensorflow ${TF_LIB} dau-conv)
 #LINK_DIRECTORIES(${TF_LIB})
 # build the actual operation which can be used directory
 
-add_library(base_op_grad SHARED base_op_grad.cpp)
+add_library(dau_conv_grad_op SHARED dau_conv_grad_op.cpp)
 #target_include_directories(base_op_grad PRIVATE "../../include/")
 #target_include_directories(base_op_grad PUBLIC "/home/vitjan/Documents/5.letnik/gauss_conv/nsync/public")
-target_link_libraries(base_op_grad dau_conv_tensorflow)
-target_link_libraries(base_op_grad ${DAUConvNet_LINKER_LIBS})
-target_include_directories(base_op_grad PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(base_op_grad PUBLIC "/usr/local/")
-target_include_directories(base_op_grad ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
+target_link_libraries(dau_conv_grad_op dau_conv_tensorflow)
+target_link_libraries(dau_conv_grad_op ${DAUConvNet_LINKER_LIBS})
+target_include_directories(dau_conv_grad_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(dau_conv_grad_op PUBLIC "/usr/local/")
+target_include_directories(dau_conv_grad_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
 #target_include_directories(base_op_grad PUBLIC ${Tensorflow_INCLUDE_DIRS})
 #target_include_directories(base_op_grad PUBLIC ${DAUConvNet_INCLUDE_DIR})
@@ -120,13 +120,13 @@ target_include_directories(base_op_grad ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUC
 
 
 #LINK_DIRECTORIES(${TF_LIB})
-add_library(base_op SHARED base_op.cpp)
+add_library(dau_conv_op SHARED dau_conv_op.cpp)
 
 #target_link_libraries(base_op ${DAUConvNet_LINKER_LIBS} ${TF_LIB} dau_conv_tensorflow)
-target_link_libraries(base_op dau_conv_tensorflow)
-target_include_directories(base_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(base_op PUBLIC "/usr/local/")
-target_include_directories(base_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
+target_link_libraries(dau_conv_op dau_conv_tensorflow)
+target_include_directories(dau_conv_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(dau_conv_op PUBLIC "/usr/local/")
+target_include_directories(dau_conv_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
 #target_include_directories(base_op PUBLIC ${DAUConvNet_INCLUDE_DIR})
 

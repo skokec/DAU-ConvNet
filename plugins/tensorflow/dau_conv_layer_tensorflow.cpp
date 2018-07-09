@@ -83,23 +83,16 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
         return this->own_workspace_data;
     }
     this->own_workspace_tensor = tmp_ten;
-    this->own_workspace_data = reinterpret_cast<Dtype*>(tmp_ten->flat<Dtype>().data());
+    this->own_workspace_data = TENSOR_DATA_PTR(tmp_ten,Dtype);
     return this->own_workspace_data;
 }
 
 template <typename Dtype>
 void DAUConvLayerTensorflowGPU<Dtype>::deallocate_workspace_mem() {
-    //AllocatorAttributes alloc_attrs;
-    //Allocator* allocator = this->context_->device()->GetAllocator(alloc_attrs);
-    //AllocatorStats stats;
-    //allocator->GetStats(&stats);
-    //printf("Bytes in use before deallocate %d\n",stats.bytes_in_use);
-
     if (this->own_workspace_data != NULL){
         delete this->own_workspace_tensor;
         this->own_workspace_data = NULL;
     }
-
 }
 
 template <typename Dtype>
@@ -118,15 +111,29 @@ void DAUConvLayerTensorflowGPU<Dtype>::reshape_params(const vector<int>& shape) 
     Tensor* orig_ten_mu1 = (Tensor*) this->param_buffer_mu1_;
     CHECK(orig_ten_mu1->shape().IsSameSize(tmp_shape));
 
-
     Tensor* orig_ten_mu2 = (Tensor*) this->param_buffer_mu2_;
     CHECK(orig_ten_mu2->shape().IsSameSize(tmp_shape));
-
 
     Tensor* orig_ten_sigma = (Tensor*) this->param_buffer_sigma_;
     CHECK(orig_ten_sigma->shape().IsSameSize(tmp_shape));
 
-    // TODO: check gradients for correct sizes (if they are not NULL)
+    // Check gradients for correct sizes (if they are not NULL)
+    if(this->param_buffer_w_grad){
+        Tensor* orig_ten = (Tensor*) this->param_buffer_w_grad;
+        CHECK(orig_ten->shape().IsSameSize(tmp_shape));
+    }
+    if(this->param_buffer_mu1_grad){
+        Tensor* orig_ten = (Tensor*) this->param_buffer_mu1_grad;
+        CHECK(orig_ten->shape().IsSameSize(tmp_shape));
+    }
+    if(this->param_buffer_mu2_grad){
+        Tensor* orig_ten = (Tensor*) this->param_buffer_mu2_grad;
+        CHECK(orig_ten->shape().IsSameSize(tmp_shape));
+    }
+    if(this->param_buffer_sigma_grad){
+        Tensor* orig_ten = (Tensor*) this->param_buffer_sigma_grad;
+        CHECK(orig_ten->shape().IsSameSize(tmp_shape));
+    }
 
 
     if (this->bias_term_) {
@@ -242,40 +249,23 @@ bool DAUConvLayerTensorflowGPU<Dtype>::update_prefiltering_kernels(cudaStream_t 
         if (0) {
             DAUKernelOutputTF<Dtype>* kernels_output = reinterpret_cast<DAUKernelOutputTF<Dtype>*>(this->aggregation.kernels);
 
-            //Dtype*  gauss_kernel = kernels_output->weight_.mutable_cpu_data();
-            auto flt_w = kernels_output->weight_->template flat<Dtype>();
-            auto dat_w = flt_w.data();
-            Dtype* gauss_kernel = reinterpret_cast<Dtype*>(dat_w);
+            Dtype* gauss_kernel = TENSOR_DATA_PTR(kernels_output->weight_, Dtype);
+
 
             int deriv_count = this->conv_in_channels_ * this->units_per_channel * this->conv_out_channels_ *
                               this->aggregation.kernel_h_ * this->aggregation.kernel_w_;
 
-            //Dtype*  deriv_weight_kernel = kernels_output->d_params_.mutable_cpu_data() + 0 * deriv_count;
             auto flt = kernels_output->d_params_->template flat<Dtype>();
             auto dat = flt.data();
+
             Dtype* deriv_weight_kernel = reinterpret_cast<Dtype*>(dat) + 0 * deriv_count;
-
-            //Dtype*  deriv_mu1_kernel = kernels_output->d_params_.mutable_cpu_data() + 1 * deriv_count;
-            //auto flt = kernels_output->d_params_->template flat<Dtype>();
-            //auto dat = flt.data();
             Dtype* deriv_mu1_kernel = reinterpret_cast<Dtype*>(dat) + 1 * deriv_count;
-
-            //Dtype*  deriv_mu2_kernel = kernels_output->d_params_.mutable_cpu_data() + 2 * deriv_count;
-            //auto flt = kernels_output->d_params_->template flat<Dtype>();
-            //auto dat = flt.data();
             Dtype* deriv_mu2_kernel = reinterpret_cast<Dtype*>(dat) + 2 * deriv_count;
-
-            //Dtype*  deriv_sigma_kernel = kernels_output->d_params_.mutable_cpu_data() + 3 * deriv_count;
-            //auto flt = kernels_output->d_params_->template flat<Dtype>();
-            //auto dat = flt.data();
             Dtype* deriv_sigma_kernel = reinterpret_cast<Dtype*>(dat) + 3 * deriv_count;
 
-            //Dtype*  deriv_error_kernel = kernels_output->d_error_.mutable_cpu_data();
             auto flt_err = kernels_output->d_error_->template flat<Dtype>();
             auto dat_err = flt_err.data();
             Dtype* deriv_error_kernel = reinterpret_cast<Dtype*>(dat_err);
-
-
 
             int h_half = this->aggregation.kernel_h_/2;
             int w_half = this->aggregation.kernel_w_/2;
@@ -520,7 +510,7 @@ void DAUKernelComputeTF<Dtype>::create_precompute_index(const int index_size, co
         tmp_ten = (this->tmp_precomp_index_);
     }
 
-    int32_t* flt_data = reinterpret_cast<int32_t*>(tmp_ten->flat<int32_t>().data());
+    int32_t* flt_data = TENSOR_DATA_PTR(tmp_ten,int32_t);
     int32_t* tmp_buffer = new int32_t[tmp_precomp_index_->NumElements()];
     tmp_buffer[0] = (int32_t) 0;
     for (int i = 0; i < this->tmp_precomp_index_->NumElements()-1;i++)
