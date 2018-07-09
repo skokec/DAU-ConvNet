@@ -5,18 +5,32 @@ if (NOT BUILD_TENSORFLOW_PLUGIN)
     return()
 endif()
 
-execute_process(COMMAND python3.5 -c "import tensorflow; print(tensorflow.sysconfig.get_include(), end='')" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
+#find_package (Python COMPONENTS Interpreter Development)
+find_package( PythonInterp REQUIRED )
+MESSAGE(STATUS "Python exec ${PYTHON_EXECUTABLE}")
 
-# C++11 required for tensorflow
-execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(' '.join(tf.sysconfig.get_compile_flags()),end='')" OUTPUT_VARIABLE TF_CFLAGS)
-execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(' '.join(tf.sysconfig.get_link_flags()),end='')" OUTPUT_VARIABLE TF_LFLAGS)
-execute_process(COMMAND python3.5 -c "import tensorflow as tf; print(tf.sysconfig.get_lib()+'/libtensorflow_framework.so',end='')" OUTPUT_VARIABLE TF_LIB)
-#TF_LFLAGS=( $(python -c 'import tensorflow as tf; print(" ".join(tf.sysconfig.get_link_flags()))') )
+#get TF VERSION
+execute_process(COMMAND python -c "import tensorflow; import sys; sys.stdout.write(tensorflow.__version__)" OUTPUT_VARIABLE TF_VERSION)
 
-set(Tensorflow_INCLUDE_DIRS "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include")
-set(TF_LIB "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/libtensorflow_framework.so")
-set(TF_CFLAGS "-I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0")
-set(TF_LFLAGS "-L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework")
+if( ${TF_VERSION} VERSION_LESS "1.5.0")
+    MESSAGE(STATUS "TF VER LOWER THAN 1.5.: ${TF_VERSION}")
+    execute_process(COMMAND python -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
+    execute_process(COMMAND python -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so')" OUTPUT_VARIABLE TF_LIB)
+    execute_process(COMMAND python -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib())" OUTPUT_VARIABLE TF_LIB_DIR)
+    set(TF_CFLAGS "-I ${Tensorflow_INCLUDE_DIRS} -D_GLIBCXX_USE_CXX11_ABI=0")
+    set(TF_LFLAGS "-L ${TF_LIB_DIR} -ltensorflow_framework")
+else()
+    MESSAGE(STATUS "TF VER: ${TF_VERSION}")
+    execute_process(COMMAND python -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
+    execute_process(COMMAND python -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_compile_flags()))" OUTPUT_VARIABLE TF_CFLAGS)
+    execute_process(COMMAND python -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_link_flags()))" OUTPUT_VARIABLE TF_LFLAGS)
+    execute_process(COMMAND python -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so')" OUTPUT_VARIABLE TF_LIB)
+endif()
+
+#set(Tensorflow_INCLUDE_DIRS "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include")
+#set(TF_LIB "/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/libtensorflow_framework.so")
+#set(TF_CFLAGS "-I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0")
+#set(TF_LFLAGS "-L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework")
 
 #-- flags:  -std=c++11 -fPIC -Wall -Wno-sign-compare -Wno-uninitialized -std=c++11 -D GOOGLE_CUDA=1 -I/home/vitjan/.local/lib/python3.5/site-packages/tensorflow/include -D_GLIBCXX_USE_CXX11_ABI=0
 #-- flags:  -L/home/vitjan/.local/lib/python3.5/site-packages/tensorflow -ltensorflow_framework
@@ -39,11 +53,11 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${TF_LFLAGS}")
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-include(cmake/Utils.cmake)
-include(cmake/Targets.cmake)
-include(cmake/ConfigGen.cmake)
+#include(cmake/Utils.cmake)
+##include(cmake/Targets.cmake)
+#include(cmake/ConfigGen.cmake)
 #include(cmake/Cuda.cmake)
-include(cmake/Dependencies.cmake)
+#include(cmake/Dependencies.cmake)
 
 
 
@@ -108,8 +122,8 @@ target_link_libraries(dau_conv_tensorflow ${TF_LIB} dau-conv)
 add_library(dau_conv_grad_op SHARED dau_conv_grad_op.cpp)
 #target_include_directories(base_op_grad PRIVATE "../../include/")
 #target_include_directories(base_op_grad PUBLIC "/home/vitjan/Documents/5.letnik/gauss_conv/nsync/public")
-target_link_libraries(dau_conv_grad_op dau_conv_tensorflow)
-target_link_libraries(dau_conv_grad_op ${DAUConvNet_LINKER_LIBS})
+target_link_libraries(dau_conv_grad_op PUBLIC dau_conv_tensorflow)
+target_link_libraries(dau_conv_grad_op PUBLIC ${DAUConvNet_LINKER_LIBS})
 target_include_directories(dau_conv_grad_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(dau_conv_grad_op PUBLIC "/usr/local/")
 target_include_directories(dau_conv_grad_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})

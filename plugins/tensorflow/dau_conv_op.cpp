@@ -2,12 +2,9 @@
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/platform/default/logging.h"
 #include "tensorflow/core/framework/shape_inference.h"
-//#include "tensorflow/stream_executor/stream.h"
-//#include "tensorflow/stream_executor/cuda/cuda_stream.h"
 //#include "tensorflow/core/util/cuda_launch_config.h"
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
-//#include "base_op.hpp"
 //using DAUConvNet::DAUConvSettings;
 using namespace tensorflow;
 
@@ -173,7 +170,7 @@ public:
         const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
                                                                                         -> stream()->implementation()
                                                                                         ->CudaStreamMemberHack()) );
-        cublasSetStream(handle, (cudaStream_t)stream);
+        cublasSetStream(handle, (cudaStream_t) *stream);
          */
         //TODO Get stream from context and add it to handle..
 
