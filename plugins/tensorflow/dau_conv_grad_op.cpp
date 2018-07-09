@@ -171,6 +171,9 @@ public:
         tf_layer.enable_forward(false);
         tf_layer.enable_backward(true);
 
+        // prevent display of allocation size on each call (except when doing unit testing)
+        tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
+
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                      (Tensor *) sigma);
 

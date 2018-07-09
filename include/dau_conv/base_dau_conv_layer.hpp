@@ -165,7 +165,7 @@ public:
     explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true)
             : cublas_handle(cublas_handle), handles_setup_(false),
               ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered),
-              enabled_fwd_op(true), enabled_bwd_op(true) {
+              enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true) {
         this->aggregation.param = NULL;
         this->aggregation.kernels = NULL;
     }
@@ -194,7 +194,7 @@ public:
 
     void enable_forward(bool enable) { this->enabled_fwd_op = enable; }
     void enable_backward(bool enable) { this->enabled_bwd_op = enable; }
-
+    void enable_memalloc_info(bool enable) {this->enabled_memalloc_info = enable; }
 protected:
     virtual void compute_output_shape();
 
@@ -263,6 +263,7 @@ protected:
 
     bool enabled_fwd_op;
     bool enabled_bwd_op;
+    bool enabled_memalloc_info;
 
     // TODO: add support for K=4 as well (K== number of parameter types i.e., K=4 for [w,mu1,mu2,sigma])
     // NOTE: allthough we set NUM_K=4 we also set last_k_optional=true which allows underlaying system to

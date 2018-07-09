@@ -323,21 +323,23 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
 
     // this is the total amount of storage needed over all groups + streams
     if (total_max_workspace > workspaceSizeInBytes) {
-        std::string units;
-        float newly_allocated = total_max_workspace - workspaceSizeInBytes;
-        if (newly_allocated > 1024*1024*1024) {
-            units = "GB";
-            newly_allocated = newly_allocated / (1024*1024*1024);
-        } else if (newly_allocated > 1024*1024) {
-            units = "MB";
-            newly_allocated = newly_allocated / (1024*1024);
-        } else if (newly_allocated > 1024) {
-            units = "kB";
-            newly_allocated = newly_allocated / (1024);
-        } else {
-            units = "B";
+        if (this->enabled_memalloc_info) {
+            std::string units;
+            float newly_allocated = total_max_workspace - workspaceSizeInBytes;
+            if (newly_allocated > 1024*1024*1024) {
+                units = "GB";
+                newly_allocated = newly_allocated / (1024*1024*1024);
+            } else if (newly_allocated > 1024*1024) {
+                units = "MB";
+                newly_allocated = newly_allocated / (1024*1024);
+            } else if (newly_allocated > 1024) {
+                units = "kB";
+                newly_allocated = newly_allocated / (1024);
+            } else {
+                units = "B";
+            }
+            std::cout << "Reallocating workspace storage with extra mem allocation: " << newly_allocated << " " << units << std::endl;
         }
-        std::cout << "Reallocating workspace storage with extra mem allocation: " << newly_allocated << " " << units << std::endl;
         workspaceSizeInBytes = total_max_workspace;
 
         // allocate workspace data but we do not own it so do not store original pointer and do not do any cleanups
