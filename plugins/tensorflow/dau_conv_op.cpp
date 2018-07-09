@@ -36,24 +36,27 @@ REGISTER_OP("DAUConv")
         .Attr("sigma_lower_bound: float = 0.3")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
-        .Attr("unit_testing: bool = false");
-/*.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
+        .Attr("unit_testing: bool = false")
+.SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
+  // TODO: check input sizes for w,mu1,mu2
 
   shape_inference::ShapeHandle weight_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 4, &weight_shape));
 
-  shape_inference::DimensionHandle output_rows = c->Dim(weight_shape, 0);
+  shape_inference::DimensionHandle output_rows = c->Dim(weight_shape, 3);
 
   shape_inference::DimensionHandle input_rows = c->Dim(input_shape, 0);
   shape_inference::DimensionHandle weight_cols = c->Dim(weight_shape, 1);
-  shape_inference::DimensionHandle merged;
-  TF_RETURN_IF_ERROR(c->Merge(input_rows, weight_cols, &merged));
 
-  c->set_output(0, c->Matrix(output_rows, 1));
+shape_inference::ShapeHandle output_shape;
+
+  TF_RETURN_IF_ERROR(c->ReplaceDim(input_shape, 1, output_rows, &output_shape));
+
+  c->set_output(0, output_shape);
   return Status::OK();
-});*/
+});
 
 template <typename Device, typename Dtype>
 class DAUConvOp : public OpKernel {
