@@ -150,7 +150,6 @@ public:
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
-        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
 
         std::vector<int> bottom_shape;
@@ -170,7 +169,6 @@ public:
         DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
 
         //set parameters from input tensors
-        //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
 
         tf_layer.enable_forward(false);
         tf_layer.enable_backward(true);
