@@ -157,8 +157,11 @@ public:
         context->input("sigma",&sigma);
 
 
-        const TensorShape& input_shape = input->shape();
-        const TensorShape& weights_shape = weights->shape();
+        const TensorShape input_shape = input->shape();
+        const TensorShape weights_shape = weights->shape();
+        const TensorShape mu1_shape = mu1->shape();
+        const TensorShape mu2_shape = mu2->shape();
+        const TensorShape sigma_shape = sigma->shape();
         std::vector<int> bottom_shape;
 
         for(int i = 0; i < input_shape.dims(); i++) bottom_shape.push_back(input_shape.dim_size(i));
@@ -167,13 +170,12 @@ public:
         //Check if output size of parameters equals to specified number of outputs
         //now checked in shape inference
         //DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
-        //DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
-        //DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
-        //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
 
 
-        //Initializer does nothing, input values were of type Filler in caffe
-        // tensorflow variables are initialized in python.
+        //Initializer does nothing tensorflow variables are initialized in python.
 
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
@@ -205,7 +207,6 @@ public:
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
 
-        //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
 
         top_shape.push_back(input_shape.dim_size(0));
