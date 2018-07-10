@@ -211,11 +211,14 @@ public:
         tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
                               {true, true, true, false, false});
 
-        //multiply mu with learning rate
-        Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
-        Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
-        DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
-        DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
+        // multiply mu with learning rate if needed
+        if (mu_learning_rate_factor != 1.0) {
+            Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
+            Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
+
+            DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
+            DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
+        }
 
     }
 private:
