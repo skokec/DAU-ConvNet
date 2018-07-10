@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <memory>
 
 #include "dau_conv/dau_conv_impl/dau_conv_backward.hpp"
 #include "dau_conv/dau_conv_impl/dau_conv_forward.hpp"

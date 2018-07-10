@@ -88,7 +88,7 @@ endif()
 # ---[ Options
 dau_conv_option(BUILD_TENSORFLOW_PLUGIN "Builds TensorFlow plugin" OFF)
 dau_conv_option(BUILD_SHARED_LIBS "Build shared libraries" ON)
-dau_conv_option(USE_OPENCV "Build with OpenCV support" ON)
+#dau_conv_option(USE_OPENCV "Build with OpenCV support" ON)
 dau_conv_option(USE_DUMMY_CUDA_IMPL "For debugging purpose; do not compile CUDA kernels (fast compile time)" OFF)
 
 # ---[ Dependencies

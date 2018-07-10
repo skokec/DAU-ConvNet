@@ -8,8 +8,8 @@
 #include "dau_conv/dau_conv_impl/dau_conv_forward.hpp"
 #include "dau_conv/dau_conv_impl/dau_conv_backward.hpp"
 
-#include <opencv2/opencv.hpp>
-#include <opencv2/gpu/gpu.hpp>
+//#include <opencv2/opencv.hpp>
+//#include <opencv2/gpu/gpu.hpp>
 #include <dau_conv/base_dau_conv_layer.hpp>
 
 namespace DAUConvNet {
@@ -459,6 +459,58 @@ Dtype* BaseDAUConvLayer<Dtype>::get_deriv_kernel_error(cudaStream_t stream) {
     return this->aggregation.kernels->d_error();
 }
 
+#define OFFSET(l,k,j,i, num_l, num_k, num_j, num_i) ((( (l)*(num_k) + (k)) * (num_j) + (j))*(num_i) + (i) )
+
+template <typename Dtype>
+Dtype cpu_dot_elementwise_skip(const Dtype* X, const int X_width, const int X_height, const int src_offset_x, const int src_offset_y,
+                              const Dtype* Y, const int Y_width, const int Y_height, const int dst_offset_x, const int dst_offset_y,
+                              const int copy_width, const int copy_height) {
+
+    Dtype const* src_ptr = X + OFFSET(0, 0,src_offset_y,src_offset_x, 1, 1, X_height, X_width);
+    Dtype const* dst_ptr = Y + OFFSET(0, 0,dst_offset_y,dst_offset_x, 1, 1, Y_height, Y_width);
+
+    Dtype result = 0;
+
+    for (int j = 0; j < copy_height; ++j) {
+        for (int i = 0; i < copy_width; ++i) {
+            result += dst_ptr[0] * src_ptr[0];
+
+            // move to next element
+            src_ptr++;
+            dst_ptr++;
+        }
+        // if copy_width does not equalt to size of arrays then we need to advance for missing elements
+        src_ptr += Y_width - copy_width;
+        dst_ptr += X_width - copy_width;
+    }
+
+    return result;
+}
+
+
+
+template <typename Dtype>
+void cpu_sum_elementwise_skip(const float alpha, const Dtype* X, const int X_width, const int X_height, const int src_offset_x, const int src_offset_y,
+                              Dtype* Y, const int Y_width, const int Y_height, const int dst_offset_x, const int dst_offset_y,
+                              const int copy_width, const int copy_height) {
+
+    Dtype const* src_ptr = X + OFFSET(0, 0,src_offset_y,src_offset_x, 1, 1, X_height, X_width);
+    Dtype* dst_ptr = Y + OFFSET(0, 0,dst_offset_y,dst_offset_x, 1, 1, Y_height, Y_width);
+
+    for (int j = 0; j < copy_height; ++j) {
+        for (int i = 0; i < copy_width; ++i) {
+            dst_ptr[0] = dst_ptr[0] * src_ptr[0] * alpha;
+
+            // move to next element
+            src_ptr++;
+            dst_ptr++;
+        }
+        // if copy_width does not equalt to size of arrays then we need to advance for missing elements
+        src_ptr += Y_width - copy_width;
+        dst_ptr += X_width - copy_width;
+    }
+}
+
 template <typename Dtype>
 void offset_and_sum_opencv(const Dtype* input_data,
                     const Dtype* filter_weights, const Dtype* filter_offsets_float_mu1, const Dtype* filter_offsets_float_mu2,
@@ -480,8 +532,16 @@ void offset_and_sum_opencv(const Dtype* input_data,
     for (int n = 0; n < num_; ++n) {
         //printf("n=%d\n",n);
 
-        cv::Mat interm_mat(conv_in_channels_ * height_,width_, CV_32F, (Dtype*)input_data + n * conv_in_channels_ * width_ * height_);
-        cv::Mat top_mat(conv_out_channels_ * height_out_, width_out_, CV_32F, output_data + n * conv_out_channels_ * width_out_  * height_out_);
+        //cv::Mat interm_mat(conv_in_channels_ * height_,width_, CV_32F, (Dtype*)input_data + n * conv_in_channels_ * width_ * height_);
+        //cv::Mat top_mat(conv_out_channels_ * height_out_, width_out_, CV_32F, output_data + n * conv_out_channels_ * width_out_  * height_out_);
+
+        int src_width = width_;
+        int src_height = conv_in_channels_ * height_;
+        Dtype const* src =  input_data + n * conv_in_channels_ * width_ * height_;
+
+        int dst_width = width_out_;
+        int dst_height = conv_out_channels_ * height_out_;
+        Dtype* dst = output_data + n * conv_out_channels_ * width_out_  * height_out_;
 
         int border_x = width_/2 - width_out_/2;
         int border_y = height_/2 - height_out_/2;
@@ -489,7 +549,10 @@ void offset_and_sum_opencv(const Dtype* input_data,
         border_x = border_x > 0 ? border_x : 0;
         border_y = border_y > 0 ? border_y : 0;
 
-        top_mat.setTo(0);
+        for (int i = 0; i <  dst_width*dst_height; ++i)
+            dst[i] = 0;
+
+        //top_mat.setTo(0);
 
         for (int f_offset = 0; f_offset < conv_out_channels_; f_offset+=F_BATCH) {
             for (int s_offset = 0; s_offset < conv_in_channels_; s_offset+=S_BATCH) {
@@ -531,7 +594,15 @@ void offset_and_sum_opencv(const Dtype* input_data,
                                     interpol_w *= (dx == 0 ? (1-interpol_off_x) : interpol_off_x);
                                     interpol_w *= (dy == 0 ? (1-interpol_off_y) : interpol_off_y);
 
-                                    cv::Rect interm_roi(border_x+std::max(0, access_x_off),
+                                    int copy_width = std::min(width_out_ + access_x_off, width_out_ - access_x_off);
+                                    int copy_height = std::min(height_out_ + access_y_off, height_out_ - access_y_off);
+
+                                    int src_offset_x = border_x+std::max(0, access_x_off);
+                                    int src_offset_y =  border_y+std::max(0, access_y_off) + access_s_offset;
+
+                                    int dst_offset_x = std::max(0, -access_x_off);
+                                    int dst_offset_y = std::max(0, -access_y_off) + access_f_offset;
+                                    /*cv::Rect interm_roi(border_x+std::max(0, access_x_off),
                                                         border_y+std::max(0, access_y_off) + access_s_offset,
                                                         std::min(width_out_ + access_x_off, width_out_ - access_x_off),
                                                         std::min(height_out_ + access_y_off, height_out_ - access_y_off));
@@ -539,11 +610,17 @@ void offset_and_sum_opencv(const Dtype* input_data,
                                     cv::Rect top_roi(std::max(0, -access_x_off),
                                                      std::max(0, -access_y_off) + access_f_offset,
                                                      std::min(width_out_ + access_x_off, width_out_ - access_x_off),
-                                                     std::min(height_out_ + access_y_off, height_out_ - access_y_off));
+                                                     std::min(height_out_ + access_y_off, height_out_ - access_y_off));*/
 
                                     //std::cout << "top_roi: " << top_roi << " interm_roi: " << interm_roi  << std::endl;
-                                    if (top_roi.width > 0 && top_roi.height > 0 && interm_roi.width > 0 && interm_roi.height > 0) {
-                                        top_mat(top_roi) += interpol_w * interm_mat(interm_roi);
+                                    //if (top_roi.width > 0 && top_roi.height > 0 && interm_roi.width > 0 && interm_roi.height > 0) {
+                                    if (copy_width > 0 && copy_height > 0) {
+                                        //top_mat(top_roi) += interpol_w * interm_mat(interm_roi);
+
+                                        cpu_sum_elementwise_skip(interpol_w, src, src_width, src_height, src_offset_x, src_offset_y,
+                                                                 dst, dst_width, dst_height, dst_offset_x, dst_offset_y,
+                                                                 copy_width, copy_height);
+
 
                                         //if (f == 0) {
                                         //    printf("sum of f,s,g=%d,%d,%d is val: ", f,s,g);
@@ -559,7 +636,6 @@ void offset_and_sum_opencv(const Dtype* input_data,
         }
     }
 }
-
     template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector<int> bottom_shape,
                                           Dtype* top_data, const vector<int> top_shape) {
@@ -659,16 +735,29 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
     for (int n = 0; n < num_; ++n) {
         //printf("n=%d\n",n);
 
+        // X == interm_data
+        int X_width = width_;
+        int X_height = conv_in_channels_ * height_;
+        const Dtype* X_ptr = input_data + n * conv_in_channels_ * width_ * height_;
 
-        cv::Mat interm_mat(conv_in_channels_ * height_,width_, CV_32F, (Dtype*)input_data + n * conv_in_channels_ * width_ * height_);
-        cv::Mat top_mat_org(conv_out_channels_ * height_out_, width_out_, CV_32F, (Dtype*)error_data + n * conv_out_channels_ * width_out_  * height_out_);
+        // Y == top_data
+        int Y_width = width_out_;
+        int Y_height = conv_out_channels_ * height_out_;
+        Dtype* Y_ptr = (Dtype*)error_data + n * conv_out_channels_ * width_out_  * height_out_;
+
+        //cv::Mat interm_mat(conv_in_channels_ * height_,width_, CV_32F, (Dtype*)input_data + n * conv_in_channels_ * width_ * height_);
+        //cv::Mat top_mat_org(conv_out_channels_ * height_out_, width_out_, CV_32F, (Dtype*)error_data + n * conv_out_channels_ * width_out_  * height_out_);
 
         // copy top matrix to another buffer so that we do not modify original data
-        cv::Mat top_mat;
-        top_mat_org.copyTo(top_mat);
+        //cv::Mat top_mat;
+        //top_mat_org.copyTo(top_mat);
 
         // set right/bottom edges to zero if we should ignore them (for GPU compatability)
         if (ignore_edge_gradients) {
+
+            Dtype* Y_ptr_new = (Dtype*)malloc(Y_width*Y_height*sizeof(Dtype));
+            memcpy(Y_ptr_new, Y_ptr, Y_width*Y_height*sizeof(Dtype));
+
             for (int f = 0; f< conv_out_channels_; ++f) {
 
                 int access_f_offset = f * height_out_;
@@ -686,9 +775,24 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
                 else if (height_out_ >= 16) disable_last_row = height_out_ % 16 == 0 ? true : false;
                 else if (height_out_ >= 8) disable_last_row = height_out_ % 8 == 0 ? true : false;
 
-                if (disable_last_column) top_mat(cv::Rect(width_out_-1, access_f_offset, 1, height_out_ )) = 0.0f;
-                if (disable_last_row) top_mat(cv::Rect(0, height_out_-1 + access_f_offset , width_out_, 1)) = 0.0f;
+                //if (disable_last_column) top_mat(cv::Rect(width_out_-1, access_f_offset, 1, height_out_ )) = 0.0f;
+                //if (disable_last_row) top_mat(cv::Rect(0, height_out_-1 + access_f_offset , width_out_, 1)) = 0.0f;
+
+                if (disable_last_column) {
+                    for (int i = 0; i < Y_height; ++i) {
+                        Y_ptr_new[OFFSET(0,0,access_f_offset + i,  width_out_-1,
+                                         1,1, Y_height,Y_width)] = 0;
+                    }
+                }
+                if (disable_last_row) {
+                    for (int i = 0; i < Y_width; ++i) {
+                        Y_ptr_new[OFFSET(0,0,height_out_-1 + access_f_offset, i,
+                                         1,1, Y_height,Y_width)] = 0;
+                    }
+                }
             }
+
+            Y_ptr = Y_ptr_new;
         }
         for (int f_offset = 0; f_offset < conv_out_channels_; f_offset+=F_BATCH) {
             for (int s_offset = 0; s_offset < conv_in_channels_; s_offset+=S_BATCH) {
@@ -732,6 +836,17 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
                                     interpol_w *= (dx == 0 ? (1-interpol_off_x) : interpol_off_x);
                                     interpol_w *= (dy == 0 ? (1-interpol_off_y) : interpol_off_y);
 
+                                    int copy_width = std::min(width_out_ + access_x_off, width_out_ - access_x_off);
+                                    int copy_height = std::min(height_out_ + access_y_off, height_out_ - access_y_off);
+
+                                    // X == interm_data
+                                    int X_offset_x = std::max(0, access_x_off);
+                                    int X_offset_y = std::max(0, access_y_off) + access_s_offset;
+
+                                    // Y == top_data
+                                    int Y_offset_x = std::max(0, -access_x_off);
+                                    int Y_offset_y = std::max(0, -access_y_off) + access_f_offset;
+                                    /*
                                     cv::Rect interm_roi(std::max(0, access_x_off),
                                                         std::max(0, access_y_off) + access_s_offset,
                                                         std::min(width_out_ + access_x_off, width_out_ - access_x_off),
@@ -741,11 +856,18 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
                                                      std::max(0, -access_y_off) + access_f_offset,
                                                      std::min(width_out_ + access_x_off, width_out_ - access_x_off),
                                                      std::min(height_out_ + access_y_off, height_out_ - access_y_off));
+                                    */
 
+                                    //if (top_roi.width > 0 && top_roi.height > 0 && interm_roi.width > 0 && interm_roi.height > 0) {
+                                    if (copy_width > 0 && copy_height > 0) {
 
-                                    if (top_roi.width > 0 && top_roi.height > 0 && interm_roi.width > 0 && interm_roi.height > 0) {
+                                        Dtype tmp = cpu_dot_elementwise_skip(X_ptr, X_width, X_height, X_offset_x, X_offset_y,
+                                                                             Y_ptr, Y_width, Y_height, Y_offset_x, Y_offset_y,
+                                                                             copy_width, copy_height);
 
-                                        output_data[param_output_offset] += top_mat(top_roi).dot(interpol_w * interm_mat(interm_roi));
+                                        //output_data[param_output_offset] += interpol_w * top_mat(top_roi).dot(interm_mat(interm_roi));
+                                        output_data[param_output_offset] += interpol_w * tmp;
+
 
                                         /*if (f == 0 && s == 0 && g == 0)
                                         {
@@ -760,9 +882,11 @@ void offset_and_dot_opencv(const Dtype* input_data, const Dtype* error_data,
                 }
             }
         }
+
+        if (ignore_edge_gradients)
+            delete Y_ptr;
     }
 }
-
 template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                                            const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down ) {
