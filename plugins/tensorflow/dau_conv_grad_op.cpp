@@ -24,6 +24,7 @@ REGISTER_OP("DAUConvGrad")
         .Output("grad_sigma: float32")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
+        .Attr("number_units_ignore : int = 0")
         .Attr("num_output : int = 64")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
@@ -59,6 +60,7 @@ public:
         int merge_threshold;
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_ignore", &this->number_units_ignore));
         OP_REQUIRES_OK(context, context->GetAttr("num_output", &num_output));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
@@ -184,7 +186,7 @@ public:
         tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
 
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
-                            &dau_kernel_output, bottom_shape, in_train);
+                            &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
 
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));
@@ -225,6 +227,7 @@ private:
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     float mu_learning_rate_factor;
+    int number_units_ignore;
 };
 
 REGISTER_KERNEL_BUILDER(Name("DAUConvGrad").Device(DEVICE_GPU), DAUConvGradOp<GPUDevice, float>);

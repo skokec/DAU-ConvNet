@@ -23,7 +23,7 @@ class DAUGridMean(init_ops.Initializer):
       dau_units: list of size 2. number of units in each direction (mu1,mu2)
       max_value: float. Limit of dau unit positions relative from the center
       use_centered_values: boolean. Output values that correspond to 0,0 at center (default=True), if false then 0,0 is at top-right corner
-      dau_unit_axis: Integer. Axis for DAU units in input tensor (default=2)
+      dau_unit_axis: Integer. Axis for DAU units in input tensor where 2 => mu1, 1 => mu2, (default=2)
     """
     def __init__(self, dau_units, max_value, dau_unit_axis=2):
         self.dau_units = dau_units
@@ -31,6 +31,13 @@ class DAUGridMean(init_ops.Initializer):
         self.max_value = max_value
 
     def __call__(self, shape, dtype=None, partition_info=None):
+
+        assert len(shape) == 4, "DAUGridMean requires input of rank 4 with dims=[1, input_channels, mu1*mu2, out_filters]"
+        # TODO: until C++ code is fixed to accept [S,mu1,mu2,F] we need to accept [1, S, mu1*mu2, F]
+        seperated_dau_dims = False if shape[2]  == self.dau_units[0] * self.dau_units[1] else True
+
+        if seperated_dau_dims is False:
+            shape = [shape[1], self.dau_units[0], self.dau_units[1], shape[-1]]
 
         num_units = shape[self.dau_unit_axis]
 
@@ -52,8 +59,7 @@ class DAUGridMean(init_ops.Initializer):
         vals = tf.tile(input=vals,
                        multiples=tile_rep_shape)
 
-        # TODO: this is temporary until C++ code is fixed to accept [S,mu1,mu2,F] values as well
-        return tf.reshape(vals,[1,shape[0],shape[1]*shape[2],shape[3]])
+        return vals if seperated_dau_dims else tf.reshape(vals,[1,shape[0],shape[1]*shape[2],shape[3]])
 
     def get_config(self):
         return {
@@ -99,7 +105,7 @@ class ZeroNLast(init_ops.Initializer):
         }
 
 
-class _DAUConvolution(object):
+class _DAUConvolution2d(object):
     """Helper class for _dau_convolution.
     Note that this class assumes that shapes of input and filter passed to
     __call__ are compatible with input_shape and filter_shape passed to the
@@ -121,13 +127,16 @@ class _DAUConvolution(object):
             data_format=None,
             strides=None,
             num_dau_units_ignore=0,
+            mu_learning_rate_factor=500,
             unit_testing=False,
             name=None):
         self.num_output = num_output
         self.padding = padding
         self.name = name
         self.dau_units = dau_units
+        self.num_dau_units_ignore = num_dau_units_ignore
         self.max_kernel_size = max_kernel_size
+        self.mu_learning_rate_factor = mu_learning_rate_factor
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -170,10 +179,12 @@ class _DAUConvolution(object):
         settings = dict(num_output=self.num_output,
                         number_units_x=self.dau_units[0],
                         number_units_y=self.dau_units[1],
+                        number_units_ignore=self.num_dau_units_ignore,
                         kernel_size=self.max_kernel_size[0],
                         pad=self.padding[0],
                         component_border_bound=1,
                         sigma_lower_bound=0.01,
+                        mu_learning_rate_factor=self.mu_learning_rate_factor,
                         unit_testing=self.unit_testing)
         return self.dau_conv_op(
             input=inp,
@@ -184,7 +195,7 @@ class _DAUConvolution(object):
             name=self.name,
             **settings)
 
-class DAUConv(base.Layer):
+class DAUConv2d(base.Layer):
 
     # C++/CUDA implementation will compute N units at the same time - enforce this constraint !!
     DAU_UNITS_GROUP = 2
@@ -197,9 +208,9 @@ class DAUConv(base.Layer):
                  activation=None,
                  use_bias=True,
                  weight_initializer=init_ops.random_normal_initializer(stddev=0.1),
-                 mu1_initializer=init_ops.zeros_initializer(),
-                 mu2_initializer=init_ops.zeros_initializer(),
-                 sigma_initializer=init_ops.constant_initializer(0.5),
+                 mu1_initializer=None,
+                 mu2_initializer=None,
+                 sigma_initializer=None,
                  bias_initializer=init_ops.zeros_initializer(),
                  weight_regularizer=None,
                  mu1_regularizer=None,
@@ -213,10 +224,11 @@ class DAUConv(base.Layer):
                  sigma_constraint=None,
                  bias_constraint=None,
                  trainable=True,
+                 mu_learning_rate_factor=500,
                  unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
-        super(DAUConv, self).__init__(trainable=trainable, name=name,
+        super(DAUConv2d, self).__init__(trainable=trainable, name=name,
                                     activity_regularizer=activity_regularizer,
                                     **kwargs)
         self.rank = 2
@@ -248,6 +260,16 @@ class DAUConv(base.Layer):
         self.sigma_regularizer = sigma_regularizer
         self.sigma_constraint = sigma_constraint
 
+        if self.mu1_initializer is None:
+            self.mu1_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[1]/2)-1, dau_unit_axis=2)
+        if self.mu2_initializer is None:
+            self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[0]/2)-1, dau_unit_axis=1)
+
+        if self.sigma_initializer is None:
+            self.sigma_initializer=init_ops.constant_initializer(0.5)
+
+        self.mu_learning_rate_factor = mu_learning_rate_factor
+
         self.unit_testing = unit_testing
 
         self.input_spec = base.InputSpec(ndim=self.rank + 2)
@@ -262,7 +284,7 @@ class DAUConv(base.Layer):
         if  self.num_dau_units_all % self.DAU_UNITS_GROUP != 0:
             new_num_units = np.ceil(self.num_dau_units_all / self.DAU_UNITS_GROUP) * self.DAU_UNITS_GROUP
 
-            self.num_dau_units_ignore = new_num_units - self.num_dau_units_all
+            self.num_dau_units_ignore = np.int32(new_num_units - self.num_dau_units_all)
 
             if self.dau_units[0] < self.dau_units[1]:
                 self.dau_units = (self.dau_units[0] + self.num_dau_units_ignore, self.dau_units[1])
@@ -385,7 +407,7 @@ class DAUConv(base.Layer):
         self.input_spec = base.InputSpec(ndim=self.rank + 2,
                                          axes={input_channel_axis: num_input_channels})
 
-        self._dau_convolution_op = _DAUConvolution(
+        self._dau_convolution_op = _DAUConvolution2d(
             input_shape,
             num_output=self.filters,
             dau_units=self.dau_units,
@@ -393,6 +415,7 @@ class DAUConv(base.Layer):
             padding=self.padding,
             strides=self.strides,
             num_dau_units_ignore=self.num_dau_units_ignore,
+            mu_learning_rate_factor=self.mu_learning_rate_factor,
             unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
@@ -457,3 +480,101 @@ class DAUConv(base.Layer):
                 new_space.append(new_dim)
             return tensor_shape.TensorShape([input_shape[0], self.filters] +
                                             new_space)
+
+from tensorflow.contrib.framework.python.ops import add_arg_scope
+from tensorflow.python.ops import variable_scope
+from tensorflow.contrib.layers.python.layers import layers as layers_contrib
+from tensorflow.contrib.layers.python.layers import utils as utils_contrib
+
+@add_arg_scope
+def dau_conv2d(inputs,
+             filters,
+             dau_units,
+             max_kernel_size,
+             stride=1,
+             data_format=None,
+             activation_fn=nn.relu,
+             normalizer_fn=None,
+             normalizer_params=None,
+             weights_initializer=init_ops.random_normal_initializer(stddev=0.1), #init_ops.glorot_uniform_initializer(),
+             weights_regularizer=None,
+             mu1_initializer=None,
+             mu1_regularizer=None,
+             mu2_initializer=None,
+             mu2_regularizer=None,
+             sigma_initializer=None,
+             sigma_regularizer=None,
+             biases_initializer=init_ops.zeros_initializer(),
+             biases_regularizer=None,
+             reuse=None,
+             variables_collections=None,
+             outputs_collections=None,
+             trainable=True,
+             scope=None):
+
+    if data_format not in [None, 'NCHW']:
+        raise ValueError('Invalid data_format: %r' % (data_format,))
+
+    layer_variable_getter = layers_contrib._build_variable_getter({
+        'bias': 'biases',
+        'weight': 'weights',
+        'mu1': 'mu1',
+        'mu2': 'mu2',
+        'sigma': 'sigma'
+    })
+
+    with variable_scope.variable_scope(
+            scope, 'DAUConv', [inputs], reuse=reuse,
+            custom_getter=layer_variable_getter) as sc:
+        inputs = ops.convert_to_tensor(inputs)
+        input_rank = inputs.get_shape().ndims
+
+        if input_rank != 4:
+            raise ValueError('Convolution not supported for input with rank',
+                             input_rank)
+
+        df = ('channels_first'
+              if data_format and data_format.startswith('NC') else 'channels_last')
+
+        layer = DAUConv2d(filters,
+                          dau_units,
+                          max_kernel_size,
+                          strides=stride,
+                          data_format=df,
+                          activation=None,
+                          use_bias=not normalizer_fn and biases_initializer,
+                          weight_initializer=weights_initializer,
+                          mu1_initializer=mu1_initializer,
+                          mu2_initializer=mu2_initializer,
+                          sigma_initializer=sigma_initializer,
+                          bias_initializer=biases_initializer,
+                          weight_regularizer=weights_regularizer,
+                          mu1_regularizer=mu1_regularizer,
+                          mu2_regularizer=mu2_regularizer,
+                          sigma_regularizer=sigma_regularizer,
+                          bias_regularizer=biases_regularizer,
+                          activity_regularizer=None,
+                          trainable=trainable,
+                          unit_testing=False,
+                          name=sc.name,
+                          _scope=sc,
+                          _reuse=reuse)
+
+        outputs = layer.apply(inputs)
+
+        # Add variables to collections.
+        layers_contrib._add_variable_to_collections(layer.dau_weights, variables_collections, 'weights')
+        layers_contrib._add_variable_to_collections(layer.dau_mu1, variables_collections, 'mu1')
+        layers_contrib._add_variable_to_collections(layer.dau_mu2, variables_collections, 'mu2')
+        layers_contrib._add_variable_to_collections(layer.dau_sigma, variables_collections, 'sigma')
+
+        if layer.use_bias:
+            layers_contrib._add_variable_to_collections(layer.bias, variables_collections, 'biases')
+
+        if normalizer_fn is not None:
+            normalizer_params = normalizer_params or {}
+            outputs = normalizer_fn(outputs, **normalizer_params)
+
+        if activation_fn is not None:
+            outputs = activation_fn(outputs)
+        return utils_contrib.collect_named_outputs(outputs_collections, sc.name, outputs)

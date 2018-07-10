@@ -21,6 +21,7 @@ REGISTER_OP("DAUConv")
         .Output("output: float")
         .Attr("number_units_x : int  = 2")
         .Attr("number_units_y : int = 2")
+        .Attr("number_units_ignore : int = 0")
         .Attr("num_output : int = 64")
         .Attr("kernel_size: int = 9")
         .Attr("pad: int = 4")
@@ -92,6 +93,7 @@ public:
         int merge_threshold;
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
+        OP_REQUIRES_OK(context, context->GetAttr("number_units_ignore", &this->number_units_ignore));
         OP_REQUIRES_OK(context, context->GetAttr("num_output", &num_output));
         OP_REQUIRES_OK(context, context->GetAttr("kernel_size", &kernel_size));
         OP_REQUIRES_OK(context, context->GetAttr("pad", &pad));
@@ -204,7 +206,7 @@ public:
         tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, in_train);
+        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
 
         //TensorShape top_tensor_shape({input_shape.dim_size(0), weight_shape.dim_size(1), input_shape.dim_size(2), input_shape.dim_size(3)});
         std::vector<int> top_shape;
@@ -237,6 +239,7 @@ public:
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
+    int number_units_ignore;
 };
 
 #define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);
