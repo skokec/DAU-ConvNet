@@ -16,6 +16,7 @@ def _dau_conv_op_grad_cc(op, grad):
     # Grad is the gradient with respect to the first input
     number_units_x = op.get_attr("number_units_x")
     number_units_y = op.get_attr("number_units_y")
+    number_units_ignore = op.get_attr("number_units_ignore")
     num_output = op.get_attr("num_output")
     kernel_size = op.get_attr("kernel_size")
     pad = op.get_attr("pad")
@@ -35,6 +36,7 @@ def _dau_conv_op_grad_cc(op, grad):
     return dau_conv_grad_module.dau_conv_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4],
                                             number_units_x=number_units_x,
                                             number_units_y=number_units_y,
+                                            number_units_ignore=number_units_ignore,
                                             num_output=num_output,
                                             kernel_size=kernel_size,
                                             pad=pad,

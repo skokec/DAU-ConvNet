@@ -222,7 +222,7 @@ public:
 							BaseDAUKernelCompute<Dtype>* kernel_compute,
 							BaseDAUKernelParams<Dtype>* kernel_param,
 							BaseDAUKernelOutput<Dtype>* kernel_output,
-							const vector<int>& bottom_shape, bool in_train = true);
+							const vector<int>& bottom_shape, int num_dau_units_ignore, bool in_train = true);
 
 	//Dtype* w, Dtype* mu1, Dtype* mu2, Dtype* sigma, bool is_gpu_ptr,
     //                                                           int num_units_per_x, int num_units_per_y, int num_units_ignore,

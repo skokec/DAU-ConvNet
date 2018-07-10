@@ -172,7 +172,14 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
                                              BaseDAUKernelCompute<Dtype>* kernel_compute,
                                              BaseDAUKernelParams<Dtype>* kernel_param,
                                              BaseDAUKernelOutput<Dtype>* kernel_output,
-                                             const vector<int>& bottom_shape, bool in_train) {
+                                             const vector<int>& bottom_shape, int num_dau_units_ignore, bool in_train) {
+
+    // ensure prod(settings.number_units) must be dividable by ALLOWED_UNITS_GROUP
+    int num_units_all = 1;
+    for (int i = 0; i < settings.number_units.size(); i++)
+        num_units_all *= settings.number_units[i];
+
+    DCHECK_EQ(num_units_all % this->ALLOWED_UNITS_GROUP, 0);
 
     // call parent to compute all the shape variables and call initialize of parameter shape
 
@@ -180,6 +187,10 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
                                         kernel_compute, kernel_param, kernel_output,
                                         bottom_shape, in_train);
 
+    // for tensorflow we expect to get memory for all units (i.e. prod(settings.number_units) must be dividable by ALLOWED_UNITS_GROUP)
+    // but if we need only some then we need to setup this here
+    // NOTE: this must be done after call to parent LayerSetUp where 'this->num_units_ignore = 0' is called
+    this->num_units_ignore = num_dau_units_ignore;
 
     // we use actual (learnable) sigma parameter when computing kernels so connect that param with the sigma for aggregation
     DAUKernelParamsTFGPU<Dtype>* kernel_param_tf_gpu = reinterpret_cast<DAUKernelParamsTFGPU<Dtype>* >(kernel_param);
@@ -301,10 +312,10 @@ template vector<int> DAUConvLayerTensorflowGPU<float>::Reshape(const vector<int>
 
 template void DAUConvLayerTensorflowGPU<float>::LayerSetUp(const DAUConvSettings& settings, const BaseDAUComponentInitializer<float>& param_initializer,
                                                       BaseDAUKernelCompute<float>* kernel_compute, BaseDAUKernelParams<float>* kernel_param, BaseDAUKernelOutput<float>* kernel_output,
-                                                      const vector<int>& bottom_shape, bool in_train);
+                                                      const vector<int>& bottom_shape, int num_dau_units_ignore, bool in_train);
 template void DAUConvLayerTensorflowGPU<double>::LayerSetUp(const DAUConvSettings& settings, const BaseDAUComponentInitializer<double>& param_initializer,
                                                        BaseDAUKernelCompute<double>* kernel_compute, BaseDAUKernelParams<double>* kernel_param, BaseDAUKernelOutput<double>* kernel_output,
-                                                       const vector<int>& bottom_shape, bool in_train);
+                                                       const vector<int>& bottom_shape, int num_dau_units_ignore, bool in_train);
 
 template void NullDAUComponentInitializerTensorflow<float>::InitializeParameters(const DAUConvSettings& settings, float* w, float* mu1, float* mu2, float* sigma, bool is_gpu_ptr,
                                                                int num_units_per_x, int num_units_per_y, int num_units_ignore,
