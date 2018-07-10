@@ -34,6 +34,7 @@ REGISTER_OP("DAUConv")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false")
+        .Attr("mu_learning_rate_factor: float = 1.0")
 .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
