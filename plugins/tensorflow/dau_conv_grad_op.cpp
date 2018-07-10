@@ -217,6 +217,10 @@ public:
         DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
         DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
 
+
+        //destroy cublas handle after end of op
+        cublasDestroy(handle);
+
     }
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;

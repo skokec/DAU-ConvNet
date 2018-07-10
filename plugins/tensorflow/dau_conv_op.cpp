@@ -34,6 +34,7 @@ REGISTER_OP("DAUConv")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false")
+        .Attr("mu_learning_rate_factor: float = 1.0")
 .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
@@ -156,6 +157,9 @@ public:
 
         const TensorShape& input_shape = input->shape();
         const TensorShape& weights_shape = weights->shape();
+        std::vector<int> bottom_shape;
+
+        for(int i = 0; i < input_shape.dims(); i++) bottom_shape.push_back(input_shape.dim_size(i));
 
 
         //Check if output size of parameters equals to specified number of outputs
@@ -168,18 +172,12 @@ public:
 
         //Initializer does nothing, input values were of type Filler in caffe
         // tensorflow variables are initialized in python.
-        NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
-        //DAUConvNet::DAUConvSettings dau_conv_settings;
+        NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
-        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
-        std::vector<int> bottom_shape;
-        for(int i = 0; i < input_shape.dims(); i++){
-            bottom_shape.push_back(input_shape.dim_size(i));
-        }
 
         cublasHandle_t handle;
         cublasCreate(&handle);
@@ -232,6 +230,8 @@ public:
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
+        //destroy cublas handle after end of op
+        cublasDestroy(handle);
     }
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;

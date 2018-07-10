@@ -48,7 +48,6 @@ public:
     Tensor* mu1_= NULL;
     Tensor* mu2_ = NULL;
     Tensor* sigma_= NULL;
-    // CPU for setting (once) GPU for computing, except for sigma
 
 private:
 	OpKernelContext* context_ = NULL;
