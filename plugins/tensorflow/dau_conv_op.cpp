@@ -38,14 +38,30 @@ REGISTER_OP("DAUConv")
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
   // TODO: check input sizes for w,mu1,mu2
+    //
 
-  shape_inference::ShapeHandle weight_shape;
-  TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 4, &weight_shape));
+    shape_inference::ShapeHandle weight_shape;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(1), 4, &weight_shape));
+    shape_inference::ShapeHandle mu1_shape;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(2), 4, &mu1_shape));
+    shape_inference::ShapeHandle mu2_shape;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(3), 4, &mu2_shape));
+    shape_inference::ShapeHandle sigma_shape;
+    TF_RETURN_IF_ERROR(c->WithRank(c->input(4), 4, &sigma_shape));
 
-  shape_inference::DimensionHandle output_rows = c->Dim(weight_shape, 3);
+    int num_out;
+    c->GetAttr("num_output", &num_out);
+    shape_inference::DimensionHandle output_rows = c->Dim(weight_shape, 3);
+    shape_inference::DimensionHandle mu1_out = c->Dim(mu1_shape, 3);
+    shape_inference::DimensionHandle mu2_out = c->Dim(mu2_shape, 3);
+    shape_inference::DimensionHandle sigma_out = c->Dim(sigma_shape, 3);
+    shape_inference::DimensionHandle out_dim;
 
-  shape_inference::DimensionHandle input_rows = c->Dim(input_shape, 0);
-  shape_inference::DimensionHandle weight_cols = c->Dim(weight_shape, 1);
+    //check if the number of outputs is set correctly in input tensors
+    TF_RETURN_IF_ERROR(c->WithValue(output_rows, num_out, &out_dim));
+    TF_RETURN_IF_ERROR(c->WithValue(mu1_out, num_out, &out_dim));
+    TF_RETURN_IF_ERROR(c->WithValue(mu2_out, num_out, &out_dim));
+    TF_RETURN_IF_ERROR(c->WithValue(sigma_out, num_out, &out_dim));
 
 shape_inference::ShapeHandle output_shape;
 
@@ -143,9 +159,10 @@ public:
 
 
         //Check if output size of parameters equals to specified number of outputs
-        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
+        //now checked in shape inference
+        //DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
         //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
 
 
@@ -208,11 +225,9 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
 
 
-        auto out_data = output->flat<Dtype>();
-        Dtype* top_data = reinterpret_cast<Dtype*>(out_data.data());
+        Dtype* top_data = TENSOR_DATA_PTR(output, Dtype);
 
-        auto input_data = input->flat<Dtype>();
-        const Dtype* bottom_data = reinterpret_cast<const Dtype*>(input_data.data());
+        const Dtype* bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
 
 
         tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);

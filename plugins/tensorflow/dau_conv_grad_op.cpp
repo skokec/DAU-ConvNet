@@ -2,6 +2,7 @@
 #include "tensorflow/core/framework/shape_inference.h"
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
+#include "dau_conv/util/math_functions.hpp"
 
 
 using namespace tensorflow;
@@ -35,7 +36,8 @@ REGISTER_OP("DAUConvGrad")
         .Attr("sigma_lower_bound: float = 0.3")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
-        .Attr("unit_testing: bool = false");
+        .Attr("unit_testing: bool = false")
+        .Attr("mu_learning_rate_factor: float = 1.0");
 //TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
 template<typename Device, typename Dtype>
 class DAUConvGradOp : public OpKernel {
@@ -70,6 +72,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
         OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
+        OP_REQUIRES_OK(context, context->GetAttr("mu_learning_rate_factor", &this->mu_learning_rate_factor));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -87,6 +90,7 @@ public:
         dau_conv_settings.sigma_lower_bound = sigma_lower_bound;
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
+
 
     }
 
@@ -134,9 +138,9 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(4, sigma->shape(), &grad_sigma));
 
 
-        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_weights->flat<Dtype>().data()),0, grad_weights->NumElements() * sizeof(Dtype)));
-        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu1->flat<Dtype>().data()),0, grad_mu1->NumElements() * sizeof(Dtype)));
-        CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_mu2->flat<Dtype>().data()),0, grad_mu2->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_weights,Dtype),0, grad_weights->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_mu1, Dtype),0, grad_mu1->NumElements() * sizeof(Dtype)));
+        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_mu2, Dtype),0, grad_mu2->NumElements() * sizeof(Dtype)));
         //CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype)));
 
         //Initializer does nothing, input values were of type Filler in caffe
@@ -196,22 +200,28 @@ public:
         for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
 
         // grad is top error since it is the error of the output of the layer
-        const Dtype *top_error = reinterpret_cast<const Dtype *>(grad->flat<Dtype>().data());
+        const Dtype *top_error = TENSOR_DATA_PTR_CONST(grad, Dtype);
 
-        const Dtype *bottom_data = reinterpret_cast<const Dtype *>(input->flat<Dtype>().data());
+        const Dtype *bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
 
         OP_REQUIRES_OK(context, context->allocate_output(0, input_shape, &grad_input));
-        Dtype *bottom_error = reinterpret_cast<Dtype *>(grad_input->flat<Dtype>().data());
+        Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
 
 
         tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
                               {true, true, true, false, false});
 
+        //multiply mu with learning rate
+        Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
+        Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
+        DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
+        DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
 
     }
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
+    float mu_learning_rate_factor;
 };
 
 REGISTER_KERNEL_BUILDER(Name("DAUConvGrad").Device(DEVICE_GPU), DAUConvGradOp<GPUDevice, float>);
