@@ -44,6 +44,7 @@ template<typename Device, typename Dtype>
 class DAUConvGradOp : public OpKernel {
 public:
     explicit DAUConvGradOp(OpKernelConstruction *context) : OpKernel(context) {
+        //Retrieve all Op attributes and set Op private variables.
         int number_units_x;
         int number_units_y;
         int num_output;
@@ -117,15 +118,21 @@ public:
         const Tensor *sigma;
         context->input("sigma", &sigma);
 
-        // create input shape (inferred from the additional attribute `n`)
         TensorShape input_shape = input->shape();
         TensorShape weights_shape = weights->shape();
+        TensorShape mu1_shape = mu1->shape();
+        TensorShape mu2_shape = mu2->shape();
+        TensorShape sigma_shape = sigma->shape();
+        std::vector<int> bottom_shape;
+        for (int i = 0; i < input_shape.dims(); i++)
+            bottom_shape.push_back(input_shape.dim_size(i));
 
-        //Check if output size of parameters equals to specified number of outputs
+
+            //Check if output size of parameters equals to specified number of outputs
         DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu1->shape().dim_size(mu1->shape().dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu2->shape().dim_size(mu2->shape().dims()-1));
-        //DCHECK_EQ(dau_conv_settings.num_output, sigma->shape().dim_size(sigma->shape().dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
+        //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
 
 
         // create output tensors
@@ -135,9 +142,9 @@ public:
         Tensor *grad_mu2 = NULL;
         Tensor *grad_sigma = NULL;
         OP_REQUIRES_OK(context, context->allocate_output(1, weights_shape, &grad_weights));
-        OP_REQUIRES_OK(context, context->allocate_output(2, mu1->shape(), &grad_mu1));
-        OP_REQUIRES_OK(context, context->allocate_output(3, mu2->shape(), &grad_mu2));
-        OP_REQUIRES_OK(context, context->allocate_output(4, sigma->shape(), &grad_sigma));
+        OP_REQUIRES_OK(context, context->allocate_output(2, mu1_shape, &grad_mu1));
+        OP_REQUIRES_OK(context, context->allocate_output(3, mu2_shape, &grad_mu2));
+        OP_REQUIRES_OK(context, context->allocate_output(4, sigma_shape, &grad_sigma));
 
 
         CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_weights,Dtype),0, grad_weights->NumElements() * sizeof(Dtype)));
@@ -145,20 +152,17 @@ public:
         CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_mu2, Dtype),0, grad_mu2->NumElements() * sizeof(Dtype)));
         //CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype)));
 
-        //Initializer does nothing, input values were of type Filler in caffe
-        // tensorflow variables are initialized in python.
+
+
+        //Initializer does nothing, Tensorflow variables are initialized in python.
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
-        //dau_kernel_params.initialize_params(param_w, param_mu1, param_mu2, param_sigma);
 
 
-        std::vector<int> bottom_shape;
-        for (int i = 0; i < input_shape.dims(); i++) {
-            bottom_shape.push_back(input_shape.dim_size(i));
-        }
+
 
 
         cublasHandle_t handle;
@@ -169,10 +173,11 @@ public:
         //cublasSetStream(handle, stream);
         //TODO Get stream from context and add it to handle..
 
+
+        // Tensorflow layer initialization
         DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
 
         //set parameters from input tensors
-        //tf_layer.InitializeFromInput(dau_conv_settings, &weights_non_const,&mu1_non_const,&mu2_non_const,&sigma_non_const);
 
         tf_layer.enable_forward(false);
         tf_layer.enable_backward(true);
@@ -188,6 +193,9 @@ public:
         tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
                             &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
 
+
+
+
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));
         top_shape.push_back(weights->dim_size(1));
@@ -195,8 +203,6 @@ public:
         top_shape.push_back(input_shape.dim_size(3));
 
         tf_layer.Reshape(bottom_shape, top_shape);
-
-        //tf_layer forward_gpu implement..
 
         TensorShape output_shape;
         for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
@@ -221,6 +227,10 @@ public:
             DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
             DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
         }
+
+
+        //destroy cublas handle after end of op
+        cublasDestroy(handle);
 
     }
 private:
