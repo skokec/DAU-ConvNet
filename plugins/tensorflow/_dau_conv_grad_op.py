@@ -29,6 +29,7 @@ def _dau_conv_op_grad_cc(op, grad):
     merge_iteration_step = op.get_attr("merge_iteration_step")
     merge_threshold = op.get_attr("merge_threshold")
     unit_testing = op.get_attr("unit_testing")
+    mu_learning_rate_factor = op.get_attr("mu_learning_rate_factor")
 
 
     return dau_conv_grad_module.dau_conv_grad(grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4],
@@ -46,4 +47,5 @@ def _dau_conv_op_grad_cc(op, grad):
                                             sigma_lower_bound=sigma_lower_bound,
                                             merge_iteration_step=merge_iteration_step,
                                             merge_threshold=merge_threshold,
+                                            mu_learning_rate_factor=mu_learning_rate_factor,
                                             unit_testing=unit_testing)
