@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.8)
 
 if (NOT BUILD_TENSORFLOW_PLUGIN)
-    MESSAGE("BUILD_TENSORFLOW_PLUGIN not set.")
+    MESSAGE(STATUS "BUILD_TENSORFLOW_PLUGIN not set.")
     return()
 endif()
 
@@ -63,7 +63,16 @@ message(STATUS "TENSORFLOW LIB: ${TF_LIB}")
 include_directories(${Tensorflow_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+# we need to manually add dependecny on .cu.o objects
+# by adding dummy output (real outputs will be created DAU-ConvNet target)
+add_custom_command(OUTPUT ${DAUConvNet_CU_OBJS}
+                    COMMAND echo
+                    DEPENDS ${DAUConvNet_OBJ_TARGET})
+
 add_library(dau_conv_tensorflow SHARED src/dau_conv_layer_tensorflow.cpp src/dau_conv_layer_tensorflow.hpp ${DAUConvNet_OBJS})
+
+# we also need to ensure to first compile DAU-ConvNet
+add_dependencies(dau_conv_tensorflow ${DAUConvNet_OBJ_TARGET})
 
 target_include_directories(dau_conv_tensorflow PUBLIC ${DAUConvNet_INCLUDE_DIR})
 target_include_directories(dau_conv_tensorflow PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -75,10 +84,7 @@ target_link_libraries(dau_conv_tensorflow PUBLIC ${TF_LIB} )
 target_link_libraries(dau_conv_tensorflow ${DAUConvNet_LINKER_LIBS})
 
 
-
-#LINK_DIRECTORIES(${TF_LIB})
 # build the actual operation which can be used directory
-
 add_library(dau_conv_grad_op SHARED src/dau_conv_grad_op.cpp)
 target_link_libraries(dau_conv_grad_op PUBLIC dau_conv_tensorflow)
 target_link_libraries(dau_conv_grad_op PUBLIC ${DAUConvNet_LINKER_LIBS})
@@ -86,10 +92,6 @@ target_include_directories(dau_conv_grad_op PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(dau_conv_grad_op PUBLIC "/usr/local/")
 target_include_directories(dau_conv_grad_op ${DAUConvNet_INCLUDE_DIRS} PUBLIC ${DAUConvNet_INCLUDE_DIR})
 
-
-
-
-#LINK_DIRECTORIES(${TF_LIB})
 add_library(dau_conv_op SHARED src/dau_conv_op.cpp)
 
 target_link_libraries(dau_conv_op dau_conv_tensorflow)
@@ -135,6 +137,6 @@ add_custom_command(OUTPUT ${OUTPUT}
         COMMAND ${CMAKE_COMMAND} -E touch ${OUTPUT}
         DEPENDS ${DEPS})
 
-add_custom_target(target ALL DEPENDS ${OUTPUT})
+add_custom_target(target ALL DEPENDS ${OUTPUT} dau_conv_tensorflow dau_conv_op dau_conv_grad_op)
 
 install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} ${SETUP_PY} install)")
