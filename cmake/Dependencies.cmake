@@ -4,6 +4,9 @@ set(DAUConvNet_INCLUDE_DIRS "")
 set(DAUConvNet_DEFINITIONS "")
 set(DAUConvNet_COMPILE_OPTIONS "")
 
+# we get strange error when DAUConvNet_DEFINITIONS is empty so we just fill it with gibrish definition to make compiler hapopy :)
+list(APPEND DAUConvNet_DEFINITIONS PUBLIC -DDUMMYXYMMUD)
+
 # ---[ CUDA
 include(cmake/Cuda.cmake)
 if(NOT HAVE_CUDA)
@@ -14,18 +17,6 @@ if(NOT HAVE_CUDA)
   endif()
 
   list(APPEND DAUConvNet_DEFINITIONS PUBLIC -DCPU_ONLY)
-endif()
-
-# ---[ OpenCV
-if(USE_OPENCV)
-  find_package(OpenCV QUIET COMPONENTS core highgui imgproc imgcodecs)
-  if(NOT OpenCV_FOUND) # if not OpenCV 3.x, then imgcodecs are not found
-    find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc)
-  endif()
-  list(APPEND DAUConvNet_INCLUDE_DIRS PUBLIC ${OpenCV_INCLUDE_DIRS})
-  list(APPEND DAUConvNet_LINKER_LIBS PUBLIC ${OpenCV_LIBS})
-  message(STATUS "OpenCV found (${OpenCV_CONFIG_PATH})")
-  list(APPEND DAUConvNet_DEFINITIONS PUBLIC -DUSE_OPENCV)
 endif()
 
 # ---[ BLAS
