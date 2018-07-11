@@ -235,7 +235,7 @@ class DAUConv2d(base.Layer):
         self.filters = filters
         self.dau_units = utils.normalize_tuple(dau_units, self.rank, 'dau_components')
         self.max_kernel_size = utils.normalize_tuple(max_kernel_size, self.rank, 'max_kernel_size')
-        self.padding = list(map(lambda x: np.floor(x/2), self.max_kernel_size))
+        self.padding = list(map(lambda x: np.floor(x/2.0), self.max_kernel_size))
         self.strides = utils.normalize_tuple(strides, self.rank, 'strides')
         self.data_format = utils.normalize_data_format(data_format)
         self.activation = activation
@@ -261,9 +261,9 @@ class DAUConv2d(base.Layer):
         self.sigma_constraint = sigma_constraint
 
         if self.mu1_initializer is None:
-            self.mu1_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[1]/2)-1, dau_unit_axis=2)
+            self.mu1_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[1]/2.0)-1, dau_unit_axis=2)
         if self.mu2_initializer is None:
-            self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[0]/2)-1, dau_unit_axis=1)
+            self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[0]/2.0)-1, dau_unit_axis=1)
 
         if self.sigma_initializer is None:
             self.sigma_initializer=init_ops.constant_initializer(0.5)
@@ -274,17 +274,17 @@ class DAUConv2d(base.Layer):
 
         self.input_spec = base.InputSpec(ndim=self.rank + 2)
 
-        self.num_dau_units_all = np.prod(self.dau_units)
+        self.num_dau_units_all = np.int32(np.prod(self.dau_units))
         self.num_dau_units_ignore = 0
 
         # if we have less then 2 units per channel then or have odd number of them then add one more dummy unit
-        # since computation is always done with 2 units at the same time (effecitvly set weight=0 for those dummy units)
+        # since computation is always done with 2 units at the same time (effectively set weight=0 for those dummy units)
 
         # make sure we have at least ALLOWED_UNITS_GROUP (this is requested so for fast version that can handle only factor of 2)
         if  self.num_dau_units_all % self.DAU_UNITS_GROUP != 0:
-            new_num_units = np.ceil(self.num_dau_units_all / self.DAU_UNITS_GROUP) * self.DAU_UNITS_GROUP
+            new_num_units = np.int32(np.ceil(self.num_dau_units_all / float(self.DAU_UNITS_GROUP)) * self.DAU_UNITS_GROUP)
 
-            self.num_dau_units_ignore = np.int32(new_num_units - self.num_dau_units_all)
+            self.num_dau_units_ignore = new_num_units - self.num_dau_units_all
 
             if self.dau_units[0] < self.dau_units[1]:
                 self.dau_units = (self.dau_units[0] + self.num_dau_units_ignore, self.dau_units[1])
