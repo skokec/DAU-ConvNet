@@ -7,7 +7,7 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import sparse_ops
 
 #dau_conv_grad_module = tf.load_op_library('../../cmake-build-debug/plugins/tensorflow/libdau_conv_grad.so')
-dau_conv_grad_module = tf.load_op_library('./bin/libdau_conv_grad_op.so')
+dau_conv_grad_module = tf.load_op_library('libdau_conv_grad_op.so')
 
 
 @ops.RegisterGradient("DAUConv")

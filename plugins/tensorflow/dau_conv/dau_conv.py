@@ -12,9 +12,9 @@ from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops import init_ops
 
-import _dau_conv_grad_op
+from ._dau_conv_grad_op import *
 
-dau_conv_op_module = tf.load_op_library('./bin/libdau_conv_op.so')
+dau_conv_op_module = tf.load_op_library('libdau_conv_op.so')
 
 class DAUGridMean(init_ops.Initializer):
     """Initializer for DAU means/offsets to follow the grid-based pattern, equaly spaced in each dimension.
