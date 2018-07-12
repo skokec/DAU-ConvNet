@@ -1,4 +1,4 @@
-# DAU-ConvNet
+# DAU-ConvNet #
 Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper titled "Spatially-Adaptive Filter Units for Deep Neural Networks"
 
 Self-contained DAU layer implementation (C++ and CUDA). Use this library to implement DAU layers in any deep learning frameworks.
@@ -9,8 +9,8 @@ Available implementations :
  
 See below for more details on each implementation.
 
-## Cite ##
-Please cite our CVPR 2018 paper when using this code:
+## Citation ##
+Please cite our CVPR 2018 paper when using DAU code:
 
 ```
 @inproceedings{Tabernik2018,
