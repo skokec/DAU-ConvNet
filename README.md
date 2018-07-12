@@ -9,6 +9,19 @@ Available implementations :
  
 See below for more details on each implementation.
 
+## Cite ##
+Please cite our CVPR 2018 paper when using this code:
+
+```
+@inproceedings{Tabernik2018,
+	title = {{Spatially-Adaptive Filter Units for Deep Neural Networks}},
+	author = {Tabernik, Domen and Kristan, Matej and Leonardis, Ale{\v{s}}},
+	booktitle = {2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+	year = {2018}
+	pages = {9388--9396}
+}
+```
+
 ## Requirements and dependency libraries ##
  * Ubuntu 16.04 (not tested on other OS and other versions)
  * C++11
