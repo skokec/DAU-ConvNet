@@ -47,7 +47,7 @@ We provide TensorFlow plugin and appropriate Python wrappers that can be used to
  * Python (tested on Python2.7 and Python3.5)
  * TensorFlow 1.5 or newer
  * Numpy
- * (optional) Scipy for running unit test in `dau_conv_test.py`
+ * (optional) Scipy, matplotlib and python-tk  for running unit test in `dau_conv_test.py`
  
 
 ## Build and installation ##
@@ -74,6 +74,18 @@ cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on ..
 make -j
 make install # will install .so into /usr/local and python module into python dist-packages folder 
 
+```
+
+### Unit test ###
+
+To validate installation using unit tests also install scipy, matplotlib and python-th, and then run `dau_conv_test.py`:
+
+```bash
+apt-get install python-tk                
+                
+pip install scipy matplotlib
+
+python DAU-ConvNet/plugins/tensorflow/tests/dau_conv_test.py
 ```
 
 
