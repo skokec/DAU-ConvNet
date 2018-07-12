@@ -78,7 +78,7 @@ make install # will install .so into /usr/local and python module into python di
 
 ### Unit test ###
 
-To validate installation using unit tests also install scipy, matplotlib and python-th, and then run `dau_conv_test.py`:
+To validate installation using unit tests also install scipy, matplotlib and python-tk, and then run `dau_conv_test.py`:
 
 ```bash
 apt-get install python-tk                
