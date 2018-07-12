@@ -162,22 +162,54 @@ dau_conv.DAUGridMean(dau_units, # number of DAU units per image axis e.g. (2,2) 
 ### Limtations and restrictions ###
 
 Current implementation is limited to using only the following settings:
- * `data_format = 'NCHW'`: only 'NCHW' format available in our C++/CUDA implementation 
+ * `data_format = 'NCHW'`: only 'NCHW' format available in our C++/CUDA implementation
  * `stride = 1`: striding not implemented yet
  * `max_kernel_size <= 17`: due to pre-defined CUDA kernels max offsets are up to 8 pixels from center e.g. 17x17 kernel size (for even larger it would require minor adjustment in  thecode and longer compile time)
 
 ### Example of code usage ###
+Example of three DAU convolutional layer and one fully connected using batch norm and L2 regularization on weights:
+
 ```python
-inputs = ...
+import tensorflow as tf
 
-net = dau_conv.dau_conv2d(inputs, 96, dau_units=(2,2), max_kernel_size=9,                          
-                          mu_learning_rate_factor=500, data_format='NCHW')
-net = layers_lib.max_pool2d(net, [2, 2], scope='pool1', data_format="NCHW")
+from tensorflow.contrib.framework import arg_scope
 
+from dau_conv import dau_conv2d
 
-net = dau_conv.dau_conv2d(net, 96, dau_units=(2,2), max_kernel_size=9,
-                          mu_learning_rate_factor=500, data_format='NCHW')
-net = layers_lib.max_pool2d(net, [2, 2], scope='pool2', data_format="NCHW")
+with arg_scope([dau_conv2d, tf.contrib.layers.fully_connected],
+                weights_regularizer=tf.contrib.layers.l2_regularizer(0.0005),
+                weights_initializer=tf.contrib.layers.xavier_initializer(uniform=False),
+                biases_initializer=None,
+                normalizer_fn=tf.layers.batch_normalization,
+                normalizer_params=dict(center=True,
+                                       scale=True,
+                                       momentum=0.9999, 
+                                       epsilon=0.001, 
+                                       axis=1, # NOTE: use axis=1 for NCHW format !!
+                                       training=in_training)):
+            
+            inputs = ...
+            
+            # convert from NHWC to NCHW format
+            inputs = tf.transpose(inputs, [0,3,1,2])
+            
+            net = dau_conv2d(inputs, 96, dau_units=(2,2), max_kernel_size=9,
+                                    mu_learning_rate_factor=500, data_format='NCHW', scope='dau_conv1')
+            net = tf.contrib.layers.max_pool2d(net, [2, 2], scope='pool1', data_format="NCHW")
+
+            net = dau_conv2d(net, 96, dau_units=(2,2), max_kernel_size=9,
+                                    mu_learning_rate_factor=500, data_format='NCHW', scope='dau_conv2')
+            net = tf.contrib.layers(net, [2, 2], scope='pool2', data_format="NCHW")
+
+            net = dau_conv2d(net, 192, dau_units=(2,2), max_kernel_size=9,
+                                    mu_learning_rate_factor=500, data_format='NCHW', scope='dau_conv3')
+            net = tf.contrib.layers.max_pool2d(net, [2, 2], scope='pool3', data_format="NCHW")
+            net = tf.reshape(net, [net.shape[0], -1])
+
+            net = tf.contrib.layers.fully_connected(net, NUM_CLASSES, scope='fc4',
+                                                    activation_fn=None,
+                                                    normalizer_fn=None,
+                                                    biases_initializer=tf.constant_initializer(0))
 ...
 ```
 
