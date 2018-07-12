@@ -5,7 +5,7 @@ Self-contained DAU layer implementation (C++ and CUDA). Use this library to impl
 
 Available implementations :
  * TensorFlow
- * Caffe
+ * [Caffe](https://github.com/skokec/DAU-ConvNet-caffe)
  
 See below for more details on each implementation.
 
@@ -26,7 +26,7 @@ Please cite our CVPR 2018 paper when using DAU code:
 
 We thank Vitjan Zavrtanik (VitjanZ) for TensorFlow C++/Python wrapper. 
 
-## Requirements and dependency libraries ##
+## Requirements and dependency libraries for DAU-ConvNet ##
  * Ubuntu 16.04 (not tested on other OS and other versions)
  * C++11
  * CMake 2.8 or newer (tested on version 3.5)
@@ -35,9 +35,9 @@ We thank Vitjan Zavrtanik (VitjanZ) for TensorFlow C++/Python wrapper.
  * cuBlas
  
 # Caffe #
-We provide a Caffe implementation based on this library in https://github.com/skokec/DAU-ConvNet-caffe
+A Caffe implementation based on this library is available in [DAU-ConvNet-caffe](https://github.com/skokec/DAU-ConvNet-caffe) repository. 
 
-Pretrained models for Caffe from CVPR 2018 papers can be found here:
+Pretrained models for Caffe from CVPR 2018 papers are available:
 * [AlexNet-DAU-ConvNet (default)](https://gist.github.com/skokec/d7e1b81b8c2426d411e0b491941b4ef2) (56.9% top-1 accuracy, 0.7 mio DAU units)
 * [AlexNet-DAU-ConvNet-small](https://gist.github.com/skokec/c9748b5d7ff99fcce7a20b9a2806004f) (56.4% top-1 accuracy, 0.3 mio DAU units)
 * [AlexNet-DAU-ConvNet-large](https://gist.github.com/skokec/d3b97367af569524fb85cf026cf5dcb8) (57.3% top-1 accuracy, 1.5 mio DAU units)
@@ -45,9 +45,10 @@ Pretrained models for Caffe from CVPR 2018 papers can be found here:
 
 # TensorFlow #
 
-We provide TensorFlow plugin and appropriate Python wrappers that can be used to directly replace the `tf.contrib.layers.conv2d` function. Note, our C++/CUDA code naively supports only NCHW format for input, please update your TensorFlow models to use this format.  
+We provide TensorFlow plugin and appropriate Python wrappers that can be used to directly replace the `tf.contrib.layers.conv2d` function. Note, our C++/CUDA code natively supports only NCHW format for input, please update your TensorFlow models to use this format.  
 
-## Requirements and dependency libraries ##
+## Additional requirements and dependency libraries for TensorFlow plugin ##
+ * Requirements for DAU-ConvNet library (see above)
  * Python (tested on Python2.7 and Python3.5)
  * TensorFlow 1.5 or newer
  * Numpy
