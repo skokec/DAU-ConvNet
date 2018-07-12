@@ -104,17 +104,17 @@ Method `dau_conv.dau_conv2d`:
 dau_conv2d(inputs,
              filters, # number of output filters
              dau_units, # number of DAU units per image axis, e.g, (2,2) for 4 DAUs per filter 
-             max_kernel_size, # maximal possible size of kernel that limits the offset of DAUs (current max 17)  
+             max_kernel_size, # maximal possible size of kernel that limits the offset of DAUs (highest value that can be used=17)  
              stride=1, # only stride=1 supported 
-             mu_learning_rate_factor=500, # additional factor for gradients on mu1 and mu2
+             mu_learning_rate_factor=500, # additional factor for gradients of mu1 and mu2
              data_format=None,
              activation_fn=tf.nn.relu,
              normalizer_fn=None,
              normalizer_params=None,
              weights_initializer=tf.random_normal_initializer(stddev=0.1), 
              weights_regularizer=None,
-             mu1_initializer=None, # see bellow for default initialization values
-             mu1_regularizer=None, # see bellow for default initialization values
+             mu1_initializer=None, # see below for default initialization values
+             mu1_regularizer=None, # see below for default initialization values
              mu2_initializer=None,
              mu2_regularizer=None,
              sigma_initializer=None,
@@ -133,14 +133,14 @@ Class `dau_conv.DAUConv2d`:
 
 DAUConv2d(filters, # number of output filters
            dau_units, # number of DAU units per image axis, e.g, (2,2) for 4 DAUs total per one filter
-           max_kernel_size, # maximal possible size of kernel that limits the offset of DAUs (current max 17)
+           max_kernel_size, # maximal possible size of kernel that limits the offset of DAUs (highest value that can be used=17)
            strides=1, # only stride=1 supported
            data_format='channels_first', # supports only 'channels_last' 
            activation=None,
            use_bias=True,
            weight_initializer=tf.random_normal_initializer(stddev=0.1),
-           mu1_initializer=None, # see bellow for default initialization values
-           mu2_initializer=None, # see bellow for default initialization values
+           mu1_initializer=None, # see below for default initialization values
+           mu2_initializer=None, # see below for default initialization values
            sigma_initializer=None,
            bias_initializer=tf.zeros_initializer(),
            weight_regularizer=None,
@@ -155,7 +155,7 @@ DAUConv2d(filters, # number of output filters
            sigma_constraint=None,
            bias_constraint=None,
            trainable=True,
-           mu_learning_rate_factor=500, # additional factor for gradients on mu1 and mu2 
+           mu_learning_rate_factor=500, # additional factor for gradients of mu1 and mu2 
            unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
            name=None)
 ```
