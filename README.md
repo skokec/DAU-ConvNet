@@ -3,7 +3,7 @@ Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper titl
 
 Self-contained DAU layer implementation (C++ and CUDA). Use this library to implement DAU layers in any deep learning frameworks.
 
-Avialble implementations :
+Available implementations :
  * TensorFlow
  * Caffe
  
@@ -66,7 +66,7 @@ make install # will install .so into /usr/local and python module into python di
 
 ## Usage ##
 
-There are two avialable methods to use our DAU convolution. Using `dau_conv.DAUConv2d` class based on `base.Layer` or using wrapper `dau_conv.dau_conv2d` functions. See below for example on using `dau_conv2d` method.  
+There are two available methods to use our DAU convolution. Using `dau_conv.DAUConv2d` class based on `base.Layer` or using wrapper `dau_conv.dau_conv2d` functions. See below for example on using `dau_conv2d` method.  
 
 
 Method `dau_conv.dau_conv2d`: 
@@ -132,7 +132,7 @@ DAUConv2d(filters, # number of output filters
 
 ### Mean initialization (mu1 and mu2 initializers) ### 
 
-Mean values (e.g. learned offsets) of DAU units are always based on (0,0) being at the center of the kernel. Default initialization (when passing None) is to arange units equaly over available space using `dau_conv.DAUGridMean` initializer class:
+Mean values (e.g. learned offsets) of DAU units are always based on (0,0) being at the center of the kernel. Default initialization (when passing None) is to arrange units equally over the available space using `dau_conv.DAUGridMean` initializer class:
 
 ```python
     if self.mu1_initializer is None:
@@ -142,7 +142,7 @@ Mean values (e.g. learned offsets) of DAU units are always based on (0,0) being 
         self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[0]/2.0)-1, dau_unit_axis=1)
 ```
 
-Other initializations with tensorflow classes are possible. For instance distributing them uniformly over center of kernel is accomplished by:
+Other TensorFlow initializer classes can be used. For instance distributing them uniformly over the center of the kernel is accomplished by:
 ```python
 dau_conv2d(...
           mu1_initializer = tf.random_uniform_initializer(minval=-np.floor(max_kernel_size/2.0), 
