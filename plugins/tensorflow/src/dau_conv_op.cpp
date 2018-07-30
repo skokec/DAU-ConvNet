@@ -30,7 +30,7 @@ REGISTER_OP("DAUConv")
         .Attr("square_unit_normalization: bool = false")
         .Attr("mean_iteration_step: int = 1")
         .Attr("sigma_iteration_step: int = 1")
-        .Attr("component_border_bound: int = 4")
+        .Attr("component_border_bound: float = 0")
         .Attr("sigma_lower_bound: float = 0.3")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
@@ -87,7 +87,7 @@ public:
         bool square_unit_normalization;
         int mean_iteration_step;
         int sigma_iteration_step;
-        int component_border_bound;
+        float component_border_bound;
         float sigma_lower_bound;
         int merge_iteration_step;
         int merge_threshold;
