@@ -196,11 +196,16 @@ template <typename Dtype>
 void caffe_gpu_clip_eps(const int N, const Dtype eps_bound, const Dtype* x, Dtype* y,
                         cudaStream_t streamId = 0);
 
+template <typename Dtype>
+void caffe_gpu_clip_nan(const int N, const Dtype* x, Dtype* y, cudaStream_t streamId = 0);
 
 template <typename Dtype>
 void caffe_gpu_pad2d(const int I, const int H, const int W, int pad_size, const Dtype* X, Dtype* Y,
                      cudaStream_t streamId = 0);
 
+template <typename Dtype>
+void caffe_gpu_amax(const int I, const Dtype* X, Dtype* Y,
+                    cublasHandle_t cublas_handle);
 
 #endif  // !CPU_ONLY
 

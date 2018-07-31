@@ -3,11 +3,13 @@
 
 #include "dau_conv/dau_conv_impl/dau_conv_backward.hpp"
 
+#include "dau_conv/util/common.hpp"
+
 namespace DAUConvNet {
 
 template <typename Dtype>
 DAUConvBackward<Dtype>::DAUConvBackward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const bool last_k_optional, const bool use_interpolation) :
-		img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G), IN_K(K), use_interpolation(use_interpolation) {
+		img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G), IN_K(K), use_interpolation(use_interpolation), last_k_optional(last_k_optional) {
 
 	// decide which size of patch to use to minimize wasted memory/processing
     if (img_width == 1 && img_height == 1) {
@@ -116,7 +118,7 @@ void DAUConvBackward<Dtype>::CUDAParams::set_params_for_allocation_call(size_t* 
 template <typename Dtype>
 void DAUConvBackward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype* filtered_images, const Dtype* error_images,
 								const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
-								const Dtype* filter_weights, const int kernel_w, const int kernel_h,
+								const Dtype* filter_weights, const int kernel_w, const int kernel_h, const Dtype actual_max_offset,
 								Dtype* output,
 								Dtype* prepared_filtered_images,
 								Dtype* prepared_error_images,
@@ -131,6 +133,7 @@ void DAUConvBackward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype*
 	this->filter_weights = filter_weights;
 	this->kernel_w = kernel_w;
 	this->kernel_h = kernel_h;
+    this->actual_max_offset = actual_max_offset;
 	this->output = output;
 	this->prepared_filtered_images = prepared_filtered_images;
 	this->prepared_error_images = prepared_error_images;
@@ -150,7 +153,7 @@ void DAUConvBackward<Dtype>::get_allocation_sizes(const int kernel_width, const 
 	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K, offsets_already_centered);
 
 	params.set_params_for_allocation_call(prepared_filtered_images_size, prepared_error_images_size, prepared_filter_weights_size, prepared_filter_offsets_size);
-	params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, NULL, kernel_width, kernel_height, NULL,
+	params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, NULL, kernel_width, kernel_height, (MAX(kernel_width, kernel_height)-1)/2, NULL,
 									  NULL, NULL, NULL, NULL, false, 0);
 
 	call_cuda_kernel(params);
@@ -160,7 +163,8 @@ template <typename Dtype>
 void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const Dtype* error_images,
 													  const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
 													  const Dtype* filter_weights,
-													  const int kernel_width, const int kernel_height, const bool offsets_already_centered,
+													  const int kernel_width, const int kernel_height, const Dtype actual_max_offset,
+										   			  const bool offsets_already_centered,
 													  Dtype* output,
 													  Dtype* prepared_filtered_images,
 													  Dtype* prepared_error_images,
@@ -169,96 +173,136 @@ void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const D
 													  const bool ignore_edge_gradients,
 													  cudaStream_t streamId) {
 
-	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K, offsets_already_centered);
+	// Optimize the max possible offset that is needed since larger offsets require loading more memory and is less efficent
 
-	params.set_params_for_allocation_call(NULL, NULL, NULL, NULL);
-	params.set_params_for_kernel_call(filtered_images, error_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, kernel_width, kernel_height, output,
-									  prepared_filtered_images, prepared_error_images, prepared_filter_weights, prepared_filter_offsets, ignore_edge_gradients, streamId);
+	// For offsets larger then 8 px then we need to :
+	//  * for offsets <= 16px: use OUT_K = 3
+	//  * for offsets <= 32px: use OUT_K = 1 and run several times for each K
+	//
+	// WARNING: this must be synced with RUN_KERNEL_R2 in dau_conv_backward_core.hpp
 
-	call_cuda_kernel(params);
+	int actual_OUT_K = OUT_K;
+    int max_offset = 32;
+
+    if (actual_max_offset <= 4)
+		max_offset = 4;
+	else if (actual_max_offset <= 8)
+		max_offset = 8;
+	else if (actual_max_offset <= 16) {
+		max_offset = 16;
+		actual_OUT_K = 3;
+	} else if (actual_max_offset <= 32) {
+		max_offset = 32;
+		actual_OUT_K = 1;
+	} else{
+        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
+        throw std::exception();
+    }
+
+	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
+	// since kernel_width and kernel_height are used in get_allocation_sizes()
+	CHECK(kernel_width >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_width.");
+    CHECK(kernel_height >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_height.");
+
+    for (int k = 0; k < OUT_K; k+=actual_OUT_K) {
+
+		// WARNING: this assumes we got K=4 in constructor
+		if (k == 3 && last_k_optional)
+			continue;
+
+		CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, actual_OUT_K, IN_K, offsets_already_centered);
+
+		params.set_params_for_allocation_call(NULL, NULL, NULL, NULL);
+		params.set_params_for_kernel_call(filtered_images + k*img_width*img_height, error_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, kernel_width, kernel_height, max_offset,
+										  output + k * (this->S *this->F * this->G), prepared_filtered_images, prepared_error_images, prepared_filter_weights, prepared_filter_offsets, ignore_edge_gradients, streamId);
+
+
+		// NOTE: we assume that kernel_width/2 >
+		call_cuda_kernel(params);
+	}
 }
 template <>
 void DAUConvBackward<float>::call_cuda_kernel(CUDAParams& params) {
 
-
-	int max_offset = MAX(params.kernel_w, params.kernel_h);
+	int max_kernel_size = 2*ceil(params.actual_max_offset) + 1;
+	//int max_kernel_size = MAX(params.kernel_w, params.kernel_h);
 
 	// calls either DAUConvBackwardCUDA->run_kernel() or DAUConvBackwardCUDA->get_allocation_sizes()
 	// if prepared_filtered_images_size, prepared_error_images_size, prepared_filter_weights_size OR prepared_filter_offsets_size are not NULL
 
 	if (patch_size_h == 1 && patch_size_w == 1) {
-		DAUConv_backward_multi_subfeatures_patch_1x1(patch_size_w, patch_size_h, max_offset,
+		DAUConv_backward_multi_subfeatures_patch_1x1(patch_size_w, patch_size_h, max_kernel_size,
 													 use_smaller_warp_and_group_k, num_images, use_interpolation,
 													 single_subfeature, params);
 	} else if (patch_size_h >= 64) {
 		if (patch_size_w >= 64) {
-			DAUConv_backward_multi_subfeatures_patch_64x64(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_64x64(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 32) {
-			DAUConv_backward_multi_subfeatures_patch_32x64(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_32x64(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 16) {
-			DAUConv_backward_multi_subfeatures_patch_16x64(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_16x64(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else {
-			DAUConv_backward_multi_subfeatures_patch_8x64(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_8x64(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		}
 	} else if (patch_size_h >= 32) {
 		if (patch_size_w >= 64) {
-			DAUConv_backward_multi_subfeatures_patch_64x32(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_64x32(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 32) {
-			DAUConv_backward_multi_subfeatures_patch_32x32(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_32x32(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 16) {
-			DAUConv_backward_multi_subfeatures_patch_16x32(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_16x32(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else {
-			DAUConv_backward_multi_subfeatures_patch_8x32(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_8x32(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		}
 	} else if (patch_size_h >= 16) {
 		if (patch_size_w >= 64) {
-			DAUConv_backward_multi_subfeatures_patch_64x16(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_64x16(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 32) {
-			DAUConv_backward_multi_subfeatures_patch_32x16(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_32x16(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else if (patch_size_w >= 16) {
-			DAUConv_backward_multi_subfeatures_patch_16x16(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_16x16(patch_size_w, patch_size_h, max_kernel_size,
 														   use_smaller_warp_and_group_k, num_images, use_interpolation,
 														   single_subfeature, params);
 		} else {
-			DAUConv_backward_multi_subfeatures_patch_8x16(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_8x16(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		}
 	} else {
 		if (patch_size_w >= 64) {
-			DAUConv_backward_multi_subfeatures_patch_64x8(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_64x8(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		} else if (patch_size_w >= 32) {
-			DAUConv_backward_multi_subfeatures_patch_32x8(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_32x8(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		} else if (patch_size_w >= 16) {
-			DAUConv_backward_multi_subfeatures_patch_16x8(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_16x8(patch_size_w, patch_size_h, max_kernel_size,
 														  use_smaller_warp_and_group_k, num_images, use_interpolation,
 														  single_subfeature, params);
 		} else {
-			DAUConv_backward_multi_subfeatures_patch_8x8(patch_size_w, patch_size_h, max_offset,
+			DAUConv_backward_multi_subfeatures_patch_8x8(patch_size_w, patch_size_h, max_kernel_size,
 														 use_smaller_warp_and_group_k, num_images, use_interpolation,
 														 single_subfeature, params);
 		}
@@ -277,8 +321,8 @@ template DAUConvBackward<float>::DAUConvBackward(const int img_width_in, const i
 template DAUConvBackward<double>::DAUConvBackward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const bool last_k_optional, const bool use_interpolation);
 
 template void DAUConvBackward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
-template void DAUConvBackward<float>::backward_pass(const float* filtered_images, const float* error_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const int kernel_width, const int kernel_height, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_error_images, float* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
+template void DAUConvBackward<float>::backward_pass(const float* filtered_images, const float* error_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const int kernel_width, const int kernel_height, const float actual_max_offset, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_error_images, float* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
 
 template void DAUConvBackward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_error_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
-template void DAUConvBackward<double>::backward_pass(const double* filtered_images, const double* error_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const int kernel_width, const int kernel_height, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_error_images, double* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
+template void DAUConvBackward<double>::backward_pass(const double* filtered_images, const double* error_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const int kernel_width, const int kernel_height, const double actual_max_offset, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_error_images, double* prepared_filter_weights, int* prepared_filter_offsets, const bool ignore_edge_gradients, cudaStream_t streamId);
 }  // namespace caffe

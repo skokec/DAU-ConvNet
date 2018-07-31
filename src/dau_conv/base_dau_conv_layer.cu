@@ -1,5 +1,6 @@
 #include <vector>
 #include <memory>
+#include <cmath>
 
 #include "dau_conv/base_dau_conv_layer.hpp"
 
@@ -17,7 +18,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 	// - first perform gaussian bluring based on variance that is fixed over the whole layer (use CuDNN for that)
 	// - then perform forward pass with our custom kernel
 	// - optionally add bias
-    M_Assert(this->is_data_on_gpu() == true, "Forward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
+    CHECK(this->is_data_on_gpu() == true, "Forward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
 
 	clock_t start_t = clock();
 
@@ -36,11 +37,11 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
         // clip sigma, mu1 and mu2 to within bounds
         caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, this->unit_sigma_lower_bound, this->param_sigma(), this->param_sigma());
 
-		Dtype mu1_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->kernel_w_/2) + unit_border_bound);
-		Dtype mu2_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->kernel_h_/2) + unit_border_bound);
+		Dtype mu1_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->max_kernel_w_/2) + (Dtype)unit_border_bound);
+		Dtype mu2_lower_limit = this->offsets_already_centered_ == false ? (Dtype)unit_border_bound : (-1* (int)(this->max_kernel_h_/2) + (Dtype)unit_border_bound);
 
-		Dtype mu1_upper_limit = this->offsets_already_centered_  == false ? this->kernel_w_-1 - (Dtype)unit_border_bound : ((int)(this->kernel_w_/2) - unit_border_bound);
-		Dtype mu2_upper_limit = this->offsets_already_centered_  == false ? this->kernel_h_-1 - (Dtype)unit_border_bound : ((int)(this->kernel_h_/2) - unit_border_bound);
+		Dtype mu1_upper_limit = this->offsets_already_centered_  == false ? this->kernel_w_-1 - (Dtype)unit_border_bound : ((int)(this->max_kernel_w_/2) - (Dtype)unit_border_bound);
+		Dtype mu2_upper_limit = this->offsets_already_centered_  == false ? this->kernel_h_-1 - (Dtype)unit_border_bound : ((int)(this->max_kernel_h_/2) - (Dtype)unit_border_bound);
 
         caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu1_lower_limit, this->param_mu1(), this->param_mu1());
         caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, mu2_lower_limit, this->param_mu2(), this->param_mu2());
@@ -59,6 +60,9 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 	const Dtype* filter_weights = this->param_w();
 	const Dtype* filter_offsets_float_mu1 = this->param_mu1();
 	const Dtype* filter_offsets_float_mu2 = this->param_mu2();
+
+    // number of all parameters
+    int param_size = this->units_per_channel * this->conv_in_channels_ * this->conv_out_channels_;
 
     cudaEvent_t memset_top, memset_filter;
     CUDA_CHECK(cudaEventCreate(&memset_top));
@@ -91,16 +95,28 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 			CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_filter, 0));
 		}
 
+        // Get maximum offset for optimizing CUDA kernel
+        Dtype actual_max_offset = (std::max<int>(this->kernel_w_, this->kernel_h_) / 2);
+
+        // optimize only when offsets are already centered and we can quickly get max abs offset value
+        if (this->offsets_already_centered_) {
+            Dtype max_mu1 = 0, max_mu2 = 0;
+
+            caffe_gpu_amax(param_size, filter_offsets_float_mu1, &max_mu1, cublas_handle);
+            caffe_gpu_amax(param_size, filter_offsets_float_mu2, &max_mu2, cublas_handle);
+
+            actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
+        }
+
 
         this->forward_obj->forward_pass(interm_data,
 										filter_offsets_float_mu1, filter_offsets_float_mu2, filter_weights, DAUConvForward<Dtype>::SGF,
-										this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+										this->kernel_w_, this->kernel_h_, actual_max_offset, this->offsets_already_centered_,
 										top_data,
 										buffer_fwd_.filtered_images,
 										NULL,
 										NULL,
-										buffer_fwd_.filter_offsets_and_weights, stream_[0]);
-
+                                        buffer_fwd_.filter_offsets_and_weights, stream_[0]);
 
 		// add bias if needed
 		if (this->bias_term_) {
@@ -123,7 +139,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 	//  - then compute and collect gradients by shifting convolved bottom input data and multiplying it with the top error data
 	//  - finally back-propagade the error by convolving top error with the rotated filters (we can use the same function as for forward-pass, but need to transpose mu1 and mu2 values)
 
-    M_Assert(this->is_data_on_gpu() == true, "Backward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
+    CHECK(this->is_data_on_gpu() == true, "Backward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
 
     this->current_iteration_index++;
     //return;
@@ -168,8 +184,22 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
             this->backward_gpu_bias(bias_diff, top_error);
 		}
 
+		// Get maximum offset for optimizing CUDA kernel
+		Dtype actual_max_offset = (std::max<int>(this->kernel_w_, this->kernel_h_) / 2);
+
+		// optimize only when offsets are already centered and we can quickly get max abs offset value
+		if (this->offsets_already_centered_) {
+			Dtype max_mu1 = 0, max_mu2 = 0;
+
+			caffe_gpu_amax(param_size, filter_offsets_float_mu1, &max_mu1, cublas_handle);
+			caffe_gpu_amax(param_size, filter_offsets_float_mu2, &max_mu2, cublas_handle);
+
+            actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
+		}
+
 		// Gradient w.r.t w,mu1,mu2 and sigma
 		if (params_propagate_down[0]) {
+
 			// TODO: if it is faster we should add zeroing to input prepare functions !!
 
 			// convolve with kernel
@@ -204,7 +234,8 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
             // WARNING: if this->kernel_w_ or this->kernel_h_ changes then memory will not be allocated properly
 			backward_grad_obj->backward_pass(interm_data, top_error,
 									   filter_offsets_float_mu1, filter_offsets_float_mu2,
-									   filter_weights, this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+									   filter_weights, this->kernel_w_, this->kernel_h_, actual_max_offset,
+   									   this->offsets_already_centered_,
 									   bwd_gradients_data,
 									   this->buffer_bwd_.filtered_images,
 									   this->buffer_bwd_.error_images,
@@ -290,7 +321,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 			// now we take the blured error data and perform sum over shifted input data with our custom kernel i.e. forward pass
 			this->backward_backporp_obj->forward_pass(interm_data,
 													  param_mu1_backprop, param_mu2_backprop, filter_weights, DAUConvForward<Dtype>::FGS,
-													  this->kernel_w_, this->kernel_h_, this->offsets_already_centered_,
+													  this->kernel_w_, this->kernel_h_, actual_max_offset, this->offsets_already_centered_,
 													  bottom_error,
 													  buffer_fwd_.filtered_images,
 													  NULL,
@@ -321,6 +352,10 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
             this->set_last_n_gauss_to_zero(param_mu2_diff, this->num_units_ignore);
             this->set_last_n_gauss_to_zero(param_sigma_diff, this->num_units_ignore);
         }
+
+        // convert NaN to 0
+        if (NUM_K > 1 && params_propagate_down[1]) caffe_gpu_clip_nan(param_size, param_mu1_diff, param_mu1_diff); // mu1
+        if (NUM_K > 2 && params_propagate_down[2]) caffe_gpu_clip_nan(param_size, param_mu2_diff, param_mu2_diff); // mu2
 	}
 
     CUDA_CHECK(cudaEventDestroy(memset_top));

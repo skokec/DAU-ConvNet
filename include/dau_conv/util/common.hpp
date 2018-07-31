@@ -36,6 +36,12 @@
 
 void __M_Assert(const char* expr_str, bool expr, const char* file, int line, const char* msg);
 
+#ifndef CHECK
+#define CHECK(Expr,Msg ) \
+ if ((Expr) == false) { printf("ERROR: %s\n", Msg); throw std::exception(); }
+
+#endif
+
 
 //
 // CUDA macros

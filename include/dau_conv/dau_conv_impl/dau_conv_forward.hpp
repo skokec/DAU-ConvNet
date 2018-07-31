@@ -33,8 +33,8 @@ public:
 	void forward_pass(const Dtype* filtered_images,
 					  const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
 					  const Dtype* filter_weights, const PARAM_FORMAT param_format,
-					  const int kernel_width, const int kernel_height, const bool offsets_already_centered,
-					  Dtype* output,
+					  const int kernel_width, const int kernel_height, const Dtype actual_max_offset,
+                      const bool offsets_already_centered, Dtype* output,
 					  Dtype* prepared_filtered_images,
 					  Dtype* prepared_filter_weights,
 					  int* prepared_filter_offsets,
@@ -61,6 +61,8 @@ public:
 		bool offsets_already_centered;
 		cudaStream_t streamId;
 
+		float actual_max_offset;
+
 	public:
 		CUDAParams(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool offsets_already_centered) :
 				img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G), offsets_already_centered(offsets_already_centered) {
@@ -72,7 +74,7 @@ public:
 										const Dtype *filter_offsets_float_x, const Dtype *filter_offsets_float_y,
 										const Dtype *filter_weights,
 										const PARAM_FORMAT param_format, const int kernel_w, const int kernel_h,
-										Dtype *output,
+										const Dtype actual_max_offset, Dtype *output,
 										Dtype *prepared_filtered_images,
 										Dtype *prepared_filter_weights,
 										int *prepared_filter_offsets,
@@ -97,6 +99,11 @@ void DAUConv_forward_float_off_8_single_feat_0_single_subfeat_0(int IMG_PATCH_SI
 void DAUConv_forward_float_off_8_single_feat_0_single_subfeat_1(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H, int MAX_OFFSET, int WARP_PIXELS_X, int WARP_PIXELS_Y, int BLOCK_IMAGES, int USE_INTERPOLATION, DAUConvForward<float>::CUDAParams &PARAMS);
 void DAUConv_forward_float_off_8_single_feat_1_single_subfeat_0(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H, int MAX_OFFSET, int WARP_PIXELS_X, int WARP_PIXELS_Y, int BLOCK_IMAGES, int USE_INTERPOLATION, DAUConvForward<float>::CUDAParams &PARAMS);
 void DAUConv_forward_float_off_8_single_feat_1_single_subfeat_1(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H, int MAX_OFFSET, int WARP_PIXELS_X, int WARP_PIXELS_Y, int BLOCK_IMAGES, int USE_INTERPOLATION, DAUConvForward<float>::CUDAParams &PARAMS);
+
+void DAUConv_forward_float_off_16_single_feat_0_single_subfeat_0(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H, int MAX_OFFSET, int WARP_PIXELS_X, int WARP_PIXELS_Y, int BLOCK_IMAGES, int USE_INTERPOLATION, DAUConvForward<float>::CUDAParams &PARAMS);
+void DAUConv_forward_float_off_32_single_feat_0_single_subfeat_0(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H, int MAX_OFFSET, int WARP_PIXELS_X, int WARP_PIXELS_Y, int BLOCK_IMAGES, int USE_INTERPOLATION, DAUConvForward<float>::CUDAParams &PARAMS);
+
+
 
 #endif  // !CPU_ONLY
 

@@ -281,6 +281,10 @@ protected:
     int conv_out_channels_, conv_in_channels_;
 
     int kernel_h_, kernel_w_;
+    // this is used for restricting mu1/mu2 within bounds of max_kernel size
+    // (to optimize speed we can defined smaller kernel size if all offsets will fall within this bound)
+    // NOTE: only works when this->offsets_already_centered_ == true
+    int max_kernel_w_, max_kernel_h_;
 
     int stride_h_, stride_w_;
     int pad_h_, pad_w_;

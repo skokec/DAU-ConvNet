@@ -85,7 +85,7 @@ template <typename Dtype>
 void DAUConvForward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype *filtered_images,
                                                                      const Dtype *filter_offsets_float_x, const Dtype *filter_offsets_float_y,
                                                                      const Dtype *filter_weights, const PARAM_FORMAT param_format, const int kernel_w, const int kernel_h,
-                                                                     Dtype *output,
+                                                                     const Dtype actual_max_offset, Dtype *output,
                                                                      Dtype *prepared_filtered_images,
                                                                      Dtype *prepared_filter_weights,
                                                                      int *prepared_filter_offsets,
@@ -97,6 +97,7 @@ void DAUConvForward<Dtype>::CUDAParams::set_params_for_kernel_call(const Dtype *
     this->filter_weights = filter_weights;
     this->kernel_w = kernel_w;
     this->kernel_h = kernel_h;
+    this->actual_max_offset = actual_max_offset;
     this->param_format = param_format;
     this->output = output;
     this->prepared_filtered_images = prepared_filtered_images;
@@ -115,7 +116,7 @@ void DAUConvForward<Dtype>::get_allocation_sizes(const int kernel_width, const i
 
     params.set_params_for_allocation_call(prepared_filtered_images_size, prepared_filter_weights_size, prepared_filter_offsets_size);
 
-    params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, PARAM_FORMAT::SGF, kernel_width, kernel_height, NULL,
+    params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, PARAM_FORMAT::SGF, kernel_width, kernel_height, (MAX(kernel_width, kernel_height)-1)/2, NULL,
                                       NULL, NULL, NULL, NULL, 0);
 
     call_cuda_kernel(params);
@@ -126,17 +127,45 @@ template <typename Dtype>
 void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
                                            const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
                                            const Dtype* filter_weights, const PARAM_FORMAT param_format,
-										   const int kernel_width, const int kernel_height, const bool offsets_already_centered,
+										   const int kernel_width, const int kernel_height, const Dtype actual_max_offset,
+										   const bool offsets_already_centered,
                                            Dtype* output,
                                            Dtype* prepared_filtered_images,
                                            Dtype* prepared_filter_weights,
                                            int* prepared_filter_offsets,
                                            Dtype* prepared_filter_offsets_and_weights, cudaStream_t streamId) {
+	// Optimize the max possible offset that is needed since larger offsets require loading more memory and is less efficent
+
+	// For offsets larger then 8 px then we need to :
+	//  * for offsets <= 16px: use OUT_K = 3
+	//  * for offsets <= 32px: use OUT_K = 1 and run several times for each K
+	//
+	// WARNING: this must be synced with RUN_KERNEL_R2 in dau_conv_backward_core.hpp
+
+	float max_offset = 32;
+
+	if (actual_max_offset <= 4)
+		max_offset = 4;
+	else if (actual_max_offset <= 8)
+		max_offset = 8;
+	else if (actual_max_offset <= 16) {
+		max_offset = 16;
+	} else if (actual_max_offset <= 32) {
+		max_offset = 32;
+	} else {
+        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
+        throw std::exception();
+    }
+
+	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
+	// since kernel_width and kernel_height are used in get_allocation_sizes()
+	CHECK(kernel_width >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_width.");
+	CHECK(kernel_height >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_height.");
 
 	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, offsets_already_centered);
 
 	params.set_params_for_allocation_call(NULL, NULL, NULL);
-	params.set_params_for_kernel_call(filtered_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, param_format, kernel_width, kernel_height, output,
+	params.set_params_for_kernel_call(filtered_images, filter_offsets_float_x, filter_offsets_float_y, filter_weights, param_format, kernel_width, kernel_height, max_offset, output,
 									  prepared_filtered_images, prepared_filter_weights, prepared_filter_offsets, prepared_filter_offsets_and_weights,
 									  streamId);
 
@@ -145,8 +174,8 @@ void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
 template <>
 void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 
-    int max_offset = MAX(params.kernel_w, params.kernel_h)/2;
-
+	int max_offset = ceil(params.actual_max_offset);
+    //int max_offset = MAX(params.kernel_w, params.kernel_h)/2;
 
 	if (max_offset <= 4) {
 		if (single_feature == false && single_subfeature == false) {
@@ -198,7 +227,19 @@ void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 																	   warp_pixel_size_x, warp_pixel_size_y, num_images,
 																	   use_interpolation, params);
 		}
-	} else {
+	} else if (max_offset <= 16) {
+		DAUConv_forward_float_off_16_single_feat_0_single_subfeat_0(patch_size_w, patch_size_h, max_offset,
+																    warp_pixel_size_x, warp_pixel_size_y, num_images,
+																    use_interpolation, params);
+
+
+	} else if (max_offset <= 32) {
+        DAUConv_forward_float_off_32_single_feat_0_single_subfeat_0(patch_size_w, patch_size_h, max_offset,
+                                                                    warp_pixel_size_x, warp_pixel_size_y, num_images,
+                                                                    use_interpolation, params);
+
+
+    } else {
 		printf("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment\n", max_offset);
         throw std::exception();
 	}
@@ -227,8 +268,8 @@ template DAUConvForward<double>::DAUConvForward(const int img_width_in, const in
 template void DAUConvForward<float>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
 template void DAUConvForward<double>::get_allocation_sizes(const int kernel_width, const int kernel_height, const bool offsets_already_centered, size_t* prepared_filtered_images_size, size_t* prepared_filter_weights_size, size_t* prepared_filter_offsets_size);
 
-template void DAUConvForward<float>::forward_pass(const float* filtered_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_filter_weights, int* prepared_filter_offsets, float* prepared_filter_offsets_and_weights, cudaStream_t streamId);
-template void DAUConvForward<double>::forward_pass(const double* filtered_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_filter_weights, int* prepared_filter_offsets, double* prepared_filter_offsets_and_weights, cudaStream_t streamId);
+template void DAUConvForward<float>::forward_pass(const float* filtered_images, const float* filter_offsets_float_x, const float* filter_offsets_float_y, const float* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const float actual_max_offset, const bool offsets_already_centered, float* output, float* prepared_filtered_images, float* prepared_filter_weights, int* prepared_filter_offsets, float* prepared_filter_offsets_and_weights, cudaStream_t streamId);
+template void DAUConvForward<double>::forward_pass(const double* filtered_images, const double* filter_offsets_float_x, const double* filter_offsets_float_y, const double* filter_weights, const PARAM_FORMAT param_format, const int kernel_width, const int kernel_height, const double actual_max_offset, const bool offsets_already_centered, double* output, double* prepared_filtered_images, double* prepared_filter_weights, int* prepared_filter_offsets, double* prepared_filter_offsets_and_weights, cudaStream_t streamId);
 
 }  // namespace caffe
 

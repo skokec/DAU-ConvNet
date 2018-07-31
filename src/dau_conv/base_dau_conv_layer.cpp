@@ -34,7 +34,7 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
                                          const vector<int>& bottom_shape, bool in_train) {
 
 
-    M_Assert(settings.number_units.size() > 0, "Missing at least one number_gauss parameter.");
+    CHECK(settings.number_units.size() > 0, "Missing at least one number_gauss parameter.");
 
     int NUM_UNITS_PER_AXIS_X = settings.number_units[0];
     int NUM_UNITS_PER_AXIS_Y = settings.number_units.size() > 1? settings.number_units[1] : NUM_UNITS_PER_AXIS_X;
@@ -56,29 +56,32 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
         this->units_per_channel = new_num_gauss;
     }
 
-    M_Assert(bottom_shape.size() == 4, "Input must have 4 axes, corresponding to (num, channels, height, width)");
+    CHECK(bottom_shape.size() == 4, "Input must have 4 axes, corresponding to (num, channels, height, width)");
 
     this->kernel_h_ = this->kernel_w_ = settings.kernel_size;
     this->pad_h_ = this->pad_w_ = settings.pad;
     this->stride_h_ = this->stride_w_ = settings.stride;
 
-    M_Assert(this->kernel_h_ > 0, "Filter dimensions cannot be zero.");
-    M_Assert(this->kernel_w_ > 0, "Filter dimensions cannot be zero.");
+    CHECK(this->kernel_h_ > 0, "Filter dimensions cannot be zero.");
+    CHECK(this->kernel_w_ > 0, "Filter dimensions cannot be zero.");
 
-    M_Assert(this->stride_h_ == 1, "BaseDAUConvLayer does not support stride>1 parameter at the moment");
-    M_Assert(this->stride_w_ == 1, "BaseDAUConvLayer does not support stride>1 parameter at the moment");
+    CHECK(this->stride_h_ == 1, "BaseDAUConvLayer does not support stride>1 parameter at the moment");
+    CHECK(this->stride_w_ == 1, "BaseDAUConvLayer does not support stride>1 parameter at the moment");
+
+    this->max_kernel_w_ = this->kernel_w_;
+    this->max_kernel_h_ = this->kernel_h_;
 
     // curently we support only NCHW format !! so channel axis is indexed as 1
     this->channel_axis_ = 1;
     const int first_spatial_axis = this->channel_axis_ + 1;
     const int num_axes = bottom_shape.size();
     this->num_spatial_axes_ = num_axes - first_spatial_axis;
-    M_Assert(this->num_spatial_axes_ >= 0, "Only positive num_spatial_axes allowed");
+    CHECK(this->num_spatial_axes_ >= 0, "Only positive num_spatial_axes allowed");
 
     // Configure output channels and groups.
     this->conv_in_channels_ = bottom_shape[this->channel_axis_];
     this->conv_out_channels_ = settings.num_output;
-    M_Assert(this->conv_out_channels_ > 0, "Only positive number of output channels allowed");
+    CHECK(this->conv_out_channels_ > 0, "Only positive number of output channels allowed");
 
     this->bias_term_ = settings.bias_term;
 
@@ -138,14 +141,14 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     // Create filter descriptor.
     Dtype sigma = this->get_sigma_val();
 
-    M_Assert(sigma > 0, "Must use sigma > 0 - initialize it with appropriate value");
+    CHECK(sigma > 0, "Must use sigma > 0 - initialize it with appropriate value");
 
     // define pre-filtering kernel size based on 5*sigma - NOTE: currently this is fixed and cannot be changed if sigma increases !!
     aggregation.kernel_h_ = 2 * (int)ceil(5 * sigma) + 1;
     aggregation.kernel_w_ = 2 * (int)ceil(5 * sigma) + 1;
 
-    M_Assert(aggregation.kernel_h_ > 1, "Sigma too small; must have gaussian kernel size > 1 - increase sigma value");
-    M_Assert(aggregation.kernel_w_ > 1, "Sigma too small; must have gaussian kernel size > 1 - increase sigma value");
+    CHECK(aggregation.kernel_h_ > 1, "Sigma too small; must have gaussian kernel size > 1 - increase sigma value");
+    CHECK(aggregation.kernel_w_ > 1, "Sigma too small; must have gaussian kernel size > 1 - increase sigma value");
 
     // we need to ensure to get the same intermediate size as input size so pad accordingly
     aggregation.pad_h_ = (int)floor(aggregation.kernel_h_ / 2);
@@ -206,11 +209,11 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
     }
     const int first_spatial_axis = this->channel_axis_ + 1;
 
-    M_Assert(bottom_shape.size() == 4, "Input must have 4 axes, corresponding to (num, channels, height, width)");
+    CHECK(bottom_shape.size() == 4, "Input must have 4 axes, corresponding to (num, channels, height, width)");
     this->batch_num_ = bottom_shape[batch_axis];
     this->height_ = bottom_shape[height_axis];
     this->width_ = bottom_shape[width_axis];
-    M_Assert(bottom_shape[this->channel_axis_] == this->conv_in_channels_, "Input size incompatible with convolution kernel.");
+    CHECK(bottom_shape[this->channel_axis_] == this->conv_in_channels_, "Input size incompatible with convolution kernel.");
 
     // Shape the tops.
     this->compute_output_shape();
@@ -223,7 +226,7 @@ vector<int> BaseDAUConvLayer<Dtype>::Reshape(const vector<int>& bottom_shape, co
     this->top_dim_ = std::accumulate(new_top_shape.begin() + this->channel_axis_, new_top_shape.end(), 1, std::multiplies<int>());
 
 
-    M_Assert(this->num_spatial_axes_ == 2, "BaseDAUConvLayer input must have 2 spatial axes (e.g., height and width). ");
+    CHECK(this->num_spatial_axes_ == 2, "BaseDAUConvLayer input must have 2 spatial axes (e.g., height and width). ");
 
     const int max_width = std::max(this->width_out_,this->width_);
     const int max_height = std::max(this->height_out_,this->height_);
@@ -643,7 +646,7 @@ void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector
         // - first perform gaussian bluring based on variance that is fixed over the whole layer (use CuDNN for that)
     // - then perform forward pass with our custom kernel
     // - optionally add bias
-    M_Assert(this->is_data_on_gpu() == false, "Forward_cpu requires data on CPU, but is_data_on_gpu() returned true !");
+    CHECK(this->is_data_on_gpu() == false, "Forward_cpu requires data on CPU, but is_data_on_gpu() returned true !");
 
     clock_t start_t = clock();
 
@@ -891,7 +894,7 @@ template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                                            const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down ) {
 
-    M_Assert(this->is_data_on_gpu() == false, "Backward_cpu requires data on CPU, but is_data_on_gpu() returned true !");
+    CHECK(this->is_data_on_gpu() == false, "Backward_cpu requires data on CPU, but is_data_on_gpu() returned true !");
 // get buffers for all parameters that we learn
     const Dtype* filter_weights = this->param_w();
     const Dtype* filter_offsets_float_mu1 = this->param_mu1();

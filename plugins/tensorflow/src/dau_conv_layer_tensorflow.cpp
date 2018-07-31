@@ -21,7 +21,7 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeGrad(DAUConvSettings& settings,
     if(settings.bias_term){
 
         this->param_buffer_bias_grad = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w_grad->shape(), this->param_buffer_bias_grad));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(DT_FLOAT, w_grad->shape(), this->param_buffer_bias_grad));
 
     }
 
@@ -42,10 +42,10 @@ void DAUConvLayerTensorflowGPU<Dtype>::InitializeFromInput(DAUConvSettings& sett
 
         if(this->param_buffer_bias_ != NULL) delete this->param_buffer_bias_;
         this->param_buffer_bias_ = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(DT_FLOAT, w->shape(), (Tensor*) this->param_buffer_bias_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(DT_FLOAT, w->shape(), (Tensor*) this->param_buffer_bias_));
 
     }
-    
+
 }
 
 template <typename Dtype>
@@ -72,14 +72,12 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
 
     //allocate new memory
     Tensor* tmp_ten = new Tensor();
-    Status can_allocate = this->context_->allocate_temp(tensorflow_dtype, TensorShape({total_bytes/sizeof(Dtype)}), tmp_ten);
+    OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({total_bytes/sizeof(Dtype)}), tmp_ten));
 
-    if(!TF_PREDICT_TRUE(can_allocate.ok())){
-
+    /*if(!TF_PREDICT_TRUE(can_allocate.ok())){
         this->own_workspace_data = NULL;
         return this->own_workspace_data;
-
-    }
+    }*/
 
     //set memory pointer and allocated tensor.
     this->own_workspace_tensor = tmp_ten;
@@ -210,7 +208,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
         if(this->bias_multiplier_ == NULL){
 
             this->bias_multiplier_ = new Tensor();
-            OP_REQUIRES_OK_BREAK(this->context_,this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,this->height_out_*this->width_out_}), this->bias_multiplier_));
+            OP_REQUIRES_OK_THROW_EX(this->context_,this->context_->allocate_temp(tensorflow_dtype, TensorShape({1,this->height_out_*this->width_out_}), this->bias_multiplier_));
 
         }else{
 
@@ -225,7 +223,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
             this->col_buffer_ = new Tensor();
             TensorShape col_shape = TensorShape({this->aggregation.kernel_h_, this->aggregation.kernel_w_, this->height_, this->width_});
-            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, col_shape, this->col_buffer_));
+            OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, col_shape, this->col_buffer_));
 
         }else{
 
@@ -242,7 +240,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
             this->interm_buffer_ = new Tensor();
             TensorShape interm_shape = TensorShape({this->batch_num_, interm_buf_size, max_height, max_width});
-            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, interm_shape, this->interm_buffer_));
+            OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, interm_shape, this->interm_buffer_));
 
         }else{
 
@@ -256,7 +254,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
             this->bwd_gradients_ = new Tensor();
             TensorShape bwd_shape = TensorShape({this->NUM_K, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_});
-            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, bwd_shape, this->bwd_gradients_));
+            OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, bwd_shape, this->bwd_gradients_));
 
         } else {
 
@@ -270,7 +268,7 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
             this->tmp_param_buffer_ = new Tensor();
             TensorShape tmp_param_shape = TensorShape({2, this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_});
-            OP_REQUIRES_OK_BREAK(this->context_, this->context_->allocate_temp(tensorflow_dtype, tmp_param_shape, this->tmp_param_buffer_));
+            OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, tmp_param_shape, this->tmp_param_buffer_));
 
         }else{
 
@@ -370,7 +368,7 @@ void DAUKernelComputeTF<Dtype>::reshape(int num_in_channels, int num_out_channel
 
         this->kernels_buffers_[i] = new Tensor();
         TensorShape kernel_buf_shape = TensorShape({num_in_channels, num_gauss, num_out_channels, kernel_h*kernel_w});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, kernel_buf_shape, this->kernels_buffers_[i]));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, kernel_buf_shape, this->kernels_buffers_[i]));
 
     }
 
@@ -385,7 +383,7 @@ void DAUKernelComputeTF<Dtype>::reshape(int num_in_channels, int num_out_channel
 
         this->param_buffers_[i] = new Tensor();
         TensorShape param_buf_shape = TensorShape({1, num_in_channels, num_gauss, num_out_channels});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_buf_shape, this->param_buffers_[i]));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_buf_shape, this->param_buffers_[i]));
 
     }
     // pre-computed offset indexes for batched sums (when using caffe_gpu_sum)
@@ -418,7 +416,7 @@ void DAUKernelParamsTF<Dtype>::reshape(int num_in_channels, int num_out_channels
 
         if(this->weight_ != NULL) delete this->weight_;
         this->weight_ = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->weight_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->weight_));
 
     }else{
         Tensor* tmp_ten = (this->weight_);
@@ -429,7 +427,7 @@ void DAUKernelParamsTF<Dtype>::reshape(int num_in_channels, int num_out_channels
 
         if(this->mu1_ != NULL) delete this->mu1_;
         this->mu1_ = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->mu1_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->mu1_));
 
     }else{
 
@@ -442,7 +440,7 @@ void DAUKernelParamsTF<Dtype>::reshape(int num_in_channels, int num_out_channels
 
         if(this->mu2_ != NULL) delete this->mu2_;
         this->mu2_ = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->mu2_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->mu2_));
 
     }else{
 
@@ -454,7 +452,7 @@ void DAUKernelParamsTF<Dtype>::reshape(int num_in_channels, int num_out_channels
 
         if(this->sigma_ != NULL) delete this->sigma_;
         this->sigma_ = new Tensor();
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->sigma_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->sigma_));
 
     }else{
         Tensor* tmp_ten = this->sigma_;
@@ -478,7 +476,7 @@ void DAUKernelOutputTF<Dtype>::reshape(int num_in_channels, int num_out_channels
         if(this->weight_ != NULL) delete this->weight_;
         this->weight_ = new Tensor();
         TensorShape weight_shape = TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, weight_shape, this->weight_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, weight_shape, this->weight_));
 
     }else{
 
@@ -491,7 +489,7 @@ void DAUKernelOutputTF<Dtype>::reshape(int num_in_channels, int num_out_channels
         if(this->d_error_ != NULL) delete this->d_error_;
         this->d_error_ = new Tensor();
         TensorShape error_shape = TensorShape({num_in_channels, num_gauss * num_out_channels, kernel_h, kernel_w});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, error_shape, this->d_error_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, error_shape, this->d_error_));
 
     }else{
         CHECK(this->d_error_->shape().IsSameSize(TensorShape({1, num_in_channels, num_gauss, num_out_channels})));
@@ -502,7 +500,7 @@ void DAUKernelOutputTF<Dtype>::reshape(int num_in_channels, int num_out_channels
         if(this->d_params_ != NULL) delete this->d_params_;
         this->d_params_= new Tensor();
         TensorShape param_shape = TensorShape({4, num_in_channels, num_gauss * num_out_channels, kernel_h * kernel_w});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->d_params_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, param_shape, this->d_params_));
 
     }else{
         CHECK(this->d_params_->shape().IsSameSize(TensorShape({4, num_in_channels, num_gauss * num_out_channels, kernel_h * kernel_w})));
@@ -543,7 +541,7 @@ void DAUKernelComputeTF<Dtype>::create_precompute_index(const int index_size, co
         if(this->tmp_precomp_index_ != NULL) delete this->tmp_precomp_index_;
         this->tmp_precomp_index_= new Tensor();
         TensorShape precomp_shape = TensorShape({1, 1, 1,index_size + 1});
-        OP_REQUIRES_OK(this->context_, this->context_->allocate_temp(tensorflow_dtype, precomp_shape, this->tmp_precomp_index_));
+        OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, precomp_shape, this->tmp_precomp_index_));
         tmp_ten = this->tmp_precomp_index_;
 
     }else{

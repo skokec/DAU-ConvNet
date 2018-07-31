@@ -32,7 +32,7 @@ private:
 	// this parameters are used as template params for DAUConvBackwardCUDA
 	int patch_size_w, patch_size_h, num_images;
 	bool use_smaller_warp_and_group_k, use_interpolation, single_subfeature;
-
+	bool last_k_optional;
 
 
 public:
@@ -44,7 +44,8 @@ public:
 	void backward_pass(const Dtype* filtered_images, const Dtype* error_images,
 					   const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
 					   const Dtype* filter_weights,
-					   const int kernel_w, const int kernel_h, const bool offsets_already_centered,
+					   const int kernel_w, const int kernel_h, const Dtype actual_max_offset,
+                       const bool offsets_already_centered,
 					   Dtype* output,
 					   Dtype* prepared_filtered_images,
 					   Dtype* prepared_error_images,
@@ -74,6 +75,8 @@ public:
 		bool offsets_already_centered;
 		cudaStream_t streamId;
 
+		float actual_max_offset;
+
 		CUDAParams(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const int IN_K, const bool offsets_already_centered) :
 				img_width_in(img_width_in), img_height_in(img_height_in), img_width(img_width), img_height(img_height), I(I), S(S), F(F), G(G), K(K), IN_K(IN_K), offsets_already_centered(offsets_already_centered){
 
@@ -82,7 +85,7 @@ public:
 
 		void set_params_for_kernel_call(const Dtype* filtered_images, const Dtype* error_images,
 										const Dtype* filter_offsets_float_x, const Dtype* filter_offsets_float_y,
-										const Dtype* filter_weights, const int kernel_w, const int kernel_h,
+										const Dtype* filter_weights, const int kernel_w, const int kernel_h, const Dtype actual_max_offset,
 										Dtype* output,
 										Dtype* prepared_filtered_images,
 										Dtype* prepared_error_images,

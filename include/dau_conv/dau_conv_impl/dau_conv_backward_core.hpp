@@ -1768,8 +1768,8 @@ namespace DAUConvNet {
             //   copy data from [16-32] threads/lane ids back to [0-16] threads/lane ids
             //   (this code can be repeated even smaller Bx)
 
-            s_offset = __shfl_down(s_offset_org, i);
-            f_offset = __shfl_down(f_offset_org, i);
+            s_offset = __shfl_down_sync(0xFFFFFFFF, s_offset_org, i);
+            f_offset = __shfl_down_sync(0xFFFFFFFF, f_offset_org, i);
 
 #pragma unroll
             for (int g = 0; g < BATCH_GAUSS_SIZE; ++g) {
@@ -1783,10 +1783,10 @@ namespace DAUConvNet {
                             //    printf("added %f from s,g,f: %d,%d,%d, block: %d,%d and img: %d\n",
                             //           out_val[g][s][f][k].x, s_offset + s , g_offset + g , f_offset + f * NUM_READ_FEATURES + 0, block_y, block_x, n_offset);
 
-                            if (NUM_READ_FEATURES > 0) out_val_sum[g][s][f][k].x = warp_reduce.Sum(__shfl_down(out_val[g][s][f][k].x,i),Bx);
-                            if (NUM_READ_FEATURES > 1) out_val_sum[g][s][f][k].y = warp_reduce.Sum(__shfl_down(out_val[g][s][f][k].y,i),Bx);
-                            if (NUM_READ_FEATURES > 2) out_val_sum[g][s][f][k].z = warp_reduce.Sum(__shfl_down(out_val[g][s][f][k].z,i),Bx);
-                            if (NUM_READ_FEATURES > 3) out_val_sum[g][s][f][k].w = warp_reduce.Sum(__shfl_down(out_val[g][s][f][k].w,i),Bx);
+                            if (NUM_READ_FEATURES > 0) out_val_sum[g][s][f][k].x = warp_reduce.Sum(__shfl_down_sync(0xFFFFFFFF, out_val[g][s][f][k].x,i),Bx);
+                            if (NUM_READ_FEATURES > 1) out_val_sum[g][s][f][k].y = warp_reduce.Sum(__shfl_down_sync(0xFFFFFFFF, out_val[g][s][f][k].y,i),Bx);
+                            if (NUM_READ_FEATURES > 2) out_val_sum[g][s][f][k].z = warp_reduce.Sum(__shfl_down_sync(0xFFFFFFFF, out_val[g][s][f][k].z,i),Bx);
+                            if (NUM_READ_FEATURES > 3) out_val_sum[g][s][f][k].w = warp_reduce.Sum(__shfl_down_sync(0xFFFFFFFF, out_val[g][s][f][k].w,i),Bx);
                         }
                     }
                 }
@@ -2948,11 +2948,15 @@ namespace DAUConvNet {
 
 #define RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, ...) \
 	if (MAX_OFFSET <= 9) { \
-		RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 4, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
+	  RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 4, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__)  \
 	} else if (MAX_OFFSET <= 17) { \
         RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 8, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
+	} else if (MAX_OFFSET <= 33) { \
+        RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 16, 3, 1, 16, 8, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
+	} else if (MAX_OFFSET <= 65) { \
+        RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 32, 1, 1, 16, 8, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
-        printf("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment\n", MAX_OFFSET); \
+        printf("Unsupported filter size: %d. Supported only max up to 9x9, 17x17, 33x33 and 65x65 at the moment\n", MAX_OFFSET); \
         throw std::exception(); \
     }
     /*else if (MAX_OFFSET <= 33) { \

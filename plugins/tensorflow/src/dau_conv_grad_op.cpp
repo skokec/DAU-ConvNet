@@ -99,7 +99,6 @@ public:
 
     void Compute(OpKernelContext *context) override {
 
-
         DCHECK_EQ(6, context->num_inputs());
 
         // in_train is used only for merge_iteration_step, which is not setup.
@@ -127,11 +126,13 @@ public:
         for (int i = 0; i < input_shape.dims(); i++)
             bottom_shape.push_back(input_shape.dim_size(i));
 
+        // create a copy of dau_conv_settings since we can change kernel_size and padding to match actual offset values
+        DAUConvNet::DAUConvSettings dau_conv_settings_ = this->dau_conv_settings;
 
-            //Check if output size of parameters equals to specified number of outputs
-        DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
-        DCHECK_EQ(dau_conv_settings.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
+        // Check if output size of parameters equals to specified number of outputs
+        DCHECK_EQ(dau_conv_settings_.num_output, weights_shape.dim_size(weights_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings_.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings_.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
         //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
 
 
@@ -154,15 +155,24 @@ public:
 
 
 
+        std::vector<int> top_shape;
+        top_shape.push_back(input_shape.dim_size(0));
+        top_shape.push_back(weights->dim_size(1));
+        top_shape.push_back(input_shape.dim_size(2));
+        top_shape.push_back(input_shape.dim_size(3));
+
+        TensorShape output_shape;
+        for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
+        OP_REQUIRES_OK(context, context->allocate_output(0, input_shape, &grad_input));
+
+        // grad is top error since it is the error of the output of the
+
         //Initializer does nothing, Tensorflow variables are initialized in python.
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
 
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
-
-
-
 
 
         cublasHandle_t handle;
@@ -172,66 +182,95 @@ public:
         //                                                                                ->CudaStreamMemberHack()) );
         //cublasSetStream(handle, stream);
         //TODO Get stream from context and add it to handle..
+        {
+            // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
+            // from the mu1/mu2 variables
+            Dtype max_mu1 = 0, max_mu2 = 0;
 
+            auto mu1__ = mu1->flat<Dtype>();
+            int param_size = mu1__.size();
 
-        // Tensorflow layer initialization
-        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
+            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, handle);
+            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2,Dtype), &max_mu2, handle);
 
-        //set parameters from input tensors
+            Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
 
-        tf_layer.enable_forward(false);
-        tf_layer.enable_backward(true);
+            if (actual_max_offset <= 4) {
+                dau_conv_settings_.kernel_size = 2 * 4 + 1;
+            } else if (actual_max_offset <= 8) {
+                dau_conv_settings_.kernel_size = 2 * 8 + 1;
+            } else if (actual_max_offset <= 16) {
+                dau_conv_settings_.kernel_size = 2 * 16 + 1;
+            } else if (actual_max_offset <= 32) {
+                dau_conv_settings_.kernel_size = 2 * 32 + 1;
+            } else  {
+                // OP_REQUIRES_OK will return so we need to release cublas handle
+                cublasDestroy(handle);
 
-        // prevent display of allocation size on each call (except when doing unit testing)
-        tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
+                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT,
+                                               "DAUConvGradOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
+            }
 
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
-                                     (Tensor *) sigma);
+            dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
-        tf_layer.InitializeGrad(dau_conv_settings, grad_weights, grad_mu1, grad_mu2, grad_sigma);
+            if (actual_max_offset!=actual_max_offset) {
+                // OP_REQUIRES_OK will return so we need to release cublas handle
+                cublasDestroy(handle);
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params,
-                            &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
+                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
+                                               "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
+            }
 
-
-
-
-        std::vector<int> top_shape;
-        top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(weights->dim_size(1));
-        top_shape.push_back(input_shape.dim_size(2));
-        top_shape.push_back(input_shape.dim_size(3));
-
-        tf_layer.Reshape(bottom_shape, top_shape);
-
-        TensorShape output_shape;
-        for (int i = 0; i < top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
-
-        // grad is top error since it is the error of the output of the layer
-        const Dtype *top_error = TENSOR_DATA_PTR_CONST(grad, Dtype);
-
-        const Dtype *bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
-
-        OP_REQUIRES_OK(context, context->allocate_output(0, input_shape, &grad_input));
-        Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
-
-
-        tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
-                              {true, true, true, false, false});
-
-        // multiply mu with learning rate if needed
-        if (mu_learning_rate_factor != 1.0) {
-            Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
-            Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
-
-            DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
-            DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
+            //std::cout << "actual_max_offset: " << actual_max_offset << " (setting kernel_size="<< dau_conv_settings_.kernel_size <<" with org kernel_size=" << this->dau_conv_settings.kernel_size<< ")" <<std::endl;
         }
+        try {
+
+            // Tensorflow layer initialization
+            DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
+
+            //set parameters from input tensors
+
+            tf_layer.enable_forward(false);
+            tf_layer.enable_backward(true);
+
+            // prevent display of allocation size on each call (except when doing unit testing)
+            tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
+
+            tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
+                                         (Tensor *) sigma);
+
+            tf_layer.InitializeGrad(dau_conv_settings_, grad_weights, grad_mu1, grad_mu2, grad_sigma);
+
+            tf_layer.LayerSetUp(dau_conv_settings_, param_initializer, &dau_kernel_compute, &dau_kernel_params,
+                                &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
+
+            tf_layer.Reshape(bottom_shape, top_shape);
 
 
+            const Dtype *top_error = TENSOR_DATA_PTR_CONST(grad, Dtype);
+
+            const Dtype *bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
+
+            Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
+
+
+            tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
+                                  {true, true, true, false, false});
+
+            // multiply mu with learning rate if needed
+            if (mu_learning_rate_factor != 1.0) {
+                Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
+                Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
+
+                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
+                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
+            }
+
+        } catch (DAUException& ex) {
+            std::cout << "ERROR: got memory error in DAUConvGradOp" << std::endl;
+        }
         //destroy cublas handle after end of op
         cublasDestroy(handle);
-
     }
 private:
     DAUConvNet::DAUConvSettings dau_conv_settings;

@@ -5,6 +5,9 @@
 //#include "tensorflow/core/util/cuda_launch_config.h"
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
+
+#include "dau_conv/util/math_functions.hpp"
+
 //using DAUConvNet::DAUConvSettings;
 using namespace tensorflow;
 
@@ -30,7 +33,7 @@ REGISTER_OP("DAUConv")
         .Attr("square_unit_normalization: bool = false")
         .Attr("mean_iteration_step: int = 1")
         .Attr("sigma_iteration_step: int = 1")
-        .Attr("component_border_bound: float = 0")
+        .Attr("component_border_bound: float = 1")
         .Attr("sigma_lower_bound: float = 0.3")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
@@ -156,16 +159,33 @@ public:
         context->input("mu2",&mu2);
         context->input("sigma",&sigma);
 
+        DAUConvNet::DAUConvSettings dau_conv_settings_ = this->dau_conv_settings;
 
         const TensorShape input_shape = input->shape();
         const TensorShape weights_shape = weights->shape();
         const TensorShape mu1_shape = mu1->shape();
         const TensorShape mu2_shape = mu2->shape();
         const TensorShape sigma_shape = sigma->shape();
+
         std::vector<int> bottom_shape;
+        std::vector<int> top_shape;
 
-        for(int i = 0; i < input_shape.dims(); i++) bottom_shape.push_back(input_shape.dim_size(i));
+        // define bottom shape (from input)
+        for(int i = 0; i < input_shape.dims(); i++)
+            bottom_shape.push_back(input_shape.dim_size(i));
 
+        // define top shape (for output)
+        top_shape.push_back(input_shape.dim_size(0));
+        top_shape.push_back(dau_conv_settings_.num_output);
+        top_shape.push_back(input_shape.dim_size(2));
+        top_shape.push_back(input_shape.dim_size(3));
+
+        TensorShape output_shape;
+        for(int i = 0; i< top_shape.size(); i++)
+            output_shape.AddDim(top_shape[i]);
+
+        Tensor* output;
+        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
 
         //Check if output size of parameters equals to specified number of outputs
         //now checked in shape inference
@@ -175,7 +195,7 @@ public:
         //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
 
 
-        //Initializer does nothing tensorflow variables are initialized in python.
+        // Initializer does nothing; tensorflow variables are initialized in python.
 
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
@@ -192,47 +212,79 @@ public:
         cublasSetStream(handle, (cudaStream_t) *stream);
          */
         //TODO Get stream from context and add it to handle..
+        {
+            Dtype max_mu1 = 0, max_mu2 = 0;
+
+            auto mu1__ = mu1->flat<Dtype>();
+            int param_size = mu1__.size();
+
+            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, handle);
+            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2,Dtype), &max_mu2, handle);
+
+            Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
+
+            if (actual_max_offset <= 4) {
+                dau_conv_settings_.kernel_size = 2 * 4 + 1;
+            } else if (actual_max_offset <= 8) {
+                dau_conv_settings_.kernel_size = 2 * 8 + 1;
+            } else if (actual_max_offset <= 16) {
+                dau_conv_settings_.kernel_size = 2 * 16 + 1;
+            } else if (actual_max_offset <= 32) {
+                dau_conv_settings_.kernel_size = 2 * 32 + 1;
+            } else {
+                // OP_REQUIRES_OK will return so we need to release cublas handle
+                cublasDestroy(handle);
+
+                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT ,
+                                            "DAUConvOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
+            }
 
 
-        DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle,context);
+            dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
-        tf_layer.enable_forward(true);
-        tf_layer.enable_backward(false);
+            if (actual_max_offset != actual_max_offset) {
+                // OP_REQUIRES_OK will return so we need to release cublas handle
+                cublasDestroy(handle);
 
-        // prevent display of allocation size on each call (except when doing unit testing)
-        tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
+                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
+                                               "DAUConvOp ERROR: got NaN value in offset (mu1,mu2) variable"));
+            }
 
-        tf_layer.InitializeFromInput(dau_conv_settings, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
+            //std::cout << "actual_max_offset: " << actual_max_offset << " (setting kernel_size="<< dau_conv_settings_.kernel_size <<" with org kernel_size=" << this->dau_conv_settings.kernel_size<< ")" <<std::endl;
+        }
+        try {
+            DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle,context);
 
+            tf_layer.enable_forward(true);
+            tf_layer.enable_backward(false);
 
-        tf_layer.LayerSetUp(dau_conv_settings, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
+            // prevent display of allocation size on each call (except when doing unit testing)
+            tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
 
-        std::vector<int> top_shape;
+            tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
-        top_shape.push_back(input_shape.dim_size(0));
-        top_shape.push_back(dau_conv_settings.num_output);
-        top_shape.push_back(input_shape.dim_size(2));
-        top_shape.push_back(input_shape.dim_size(3));
+            tf_layer.LayerSetUp(dau_conv_settings_, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
 
+            vector<int> new_top_data = tf_layer.Reshape(bottom_shape, top_shape);
 
-        std::vector<int> new_shape = tf_layer.Reshape(bottom_shape, top_shape);
+            CHECK(new_top_data[0] == top_shape[0]);
+            CHECK(new_top_data[1] == top_shape[1]);
+            CHECK(new_top_data[2] == top_shape[2]);
+            CHECK(new_top_data[3] == top_shape[3]);
 
+            Dtype* top_data = TENSOR_DATA_PTR(output, Dtype);
 
-        TensorShape output_shape;
-        for(int i = 0; i< top_shape.size(); i++) output_shape.AddDim(top_shape[i]);
+            const Dtype* bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
 
+            // since we can use smaller kernel size of all offsets will fit we need to update max kernel size that is
+            // used to clip offsets within this bound
+            tf_layer.set_max_kernel_size(dau_conv_settings.kernel_size,dau_conv_settings.kernel_size);
 
-        Tensor* output;
-        OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
+            tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
-
-        Dtype* top_data = TENSOR_DATA_PTR(output, Dtype);
-
-        const Dtype* bottom_data = TENSOR_DATA_PTR_CONST(input, Dtype);
-
-
-        tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
-
+        } catch (DAUException& ex) {
+            std::cout << "ERROR: got memory error in DAUConvOp" << std::endl;
+        }
         //destroy cublas handle after end of op
         cublasDestroy(handle);
     }

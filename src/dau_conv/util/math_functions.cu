@@ -310,8 +310,29 @@ void caffe_gpu_clip_eps<double>(const int N, const double eps_bound, const doubl
 }
 
 
-
 template <typename Dtype>
+__global__ void clip_nan_kernel(const int n, const Dtype* x, Dtype* y) {
+  CUDA_KERNEL_LOOP(index, n) {
+    Dtype val = x[index];
+    y[index] = isnan(val) ? 0 : val;
+  }
+}
+
+
+template <>
+void caffe_gpu_clip_nan<float>(const int N, const float* x, float* y, cudaStream_t streamId) {
+  clip_nan_kernel<float><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(N, x, y);
+  CUDA_POST_KERNEL_CHECK;
+}
+template <>
+void caffe_gpu_clip_nan<double>(const int N, const double* x, double* y, cudaStream_t streamId) {
+  clip_nan_kernel<double><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(N, x, y);
+  CUDA_POST_KERNEL_CHECK;
+}
+
+
+
+    template <typename Dtype>
 void caffe_gpu_sum(const int n, const Dtype* x, Dtype* y, const int m, cudaStream_t streamId) {
   M_Assert(n % m == 0, "Invalid size in caffe_gpu_sum: n should be a multiple of m");
   int num_segments = n/m;
@@ -383,5 +404,21 @@ void caffe_gpu_pad2d(const int I, const int H, const int W, int pad_size, const 
 template void caffe_gpu_pad2d(const int I, const int H, const int W, int pad_size, const float* X, float* Y, cudaStream_t streamId);
 template void caffe_gpu_pad2d(const int I, const int H, const int W, int pad_size, const double* X, double* Y, cudaStream_t streamId);
 
+template <>
+void caffe_gpu_amax<float>(const int N, const float* X, float* Y,
+                           cublasHandle_t cublas_handle) {
+    int result_index = 0;
+    CUBLAS_CHECK(cublasIsamax(cublas_handle, N, X, 1, &result_index));
+    // NOTE: cublasIsamax returns 1-based index an NOT zero-based as would be commonly expected !!!
+    CUDA_CHECK(cudaMemcpy(Y, X + result_index-1, sizeof(float), cudaMemcpyDeviceToHost ));
+}
+
+template <>
+void caffe_gpu_amax<double>(const int N, const double* X, double* Y,
+                            cublasHandle_t cublas_handle) {
+    int result_index = 0;
+    CUBLAS_CHECK(cublasIdamax(cublas_handle, N, X, 1, &result_index));
+    CUDA_CHECK(cudaMemcpy(Y, X + result_index-1, sizeof(double), cudaMemcpyDeviceToHost ));
+}
 
 }  // namespace dau_conv_impl

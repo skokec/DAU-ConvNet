@@ -112,9 +112,6 @@ class _DAUConvolution2d(object):
     constructor.
     Arguments:
       input_shape: static input shape, i.e. input.get_shape().
-      padding: see _non_atrous_convolution.
-      data_format: see _non_atrous_convolution.
-      strides: see _non_atrous_convolution.
       name: see _non_atrous_convolution.
     """
     def __init__(
@@ -128,6 +125,7 @@ class _DAUConvolution2d(object):
             strides=None,
             num_dau_units_ignore=0,
             mu_learning_rate_factor=500,
+            dau_unit_border_bound=0.01,
             unit_testing=False,
             name=None):
         self.num_output = num_output
@@ -137,6 +135,7 @@ class _DAUConvolution2d(object):
         self.num_dau_units_ignore = num_dau_units_ignore
         self.max_kernel_size = max_kernel_size
         self.mu_learning_rate_factor = mu_learning_rate_factor
+        self.dau_unit_border_bound = dau_unit_border_bound
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -182,7 +181,7 @@ class _DAUConvolution2d(object):
                         number_units_ignore=self.num_dau_units_ignore,
                         kernel_size=self.max_kernel_size[0],
                         pad=self.padding[0],
-                        component_border_bound=1,
+                        component_border_bound=self.dau_unit_border_bound,
                         sigma_lower_bound=0.01,
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
                         unit_testing=self.unit_testing)
@@ -225,6 +224,7 @@ class DAUConv2d(base.Layer):
                  bias_constraint=None,
                  trainable=True,
                  mu_learning_rate_factor=500,
+                 dau_unit_border_bound=0.01,
                  unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
@@ -274,6 +274,7 @@ class DAUConv2d(base.Layer):
 
         self.input_spec = base.InputSpec(ndim=self.rank + 2)
 
+        self.dau_unit_border_bound = dau_unit_border_bound
         self.num_dau_units_all = np.int32(np.prod(self.dau_units))
         self.num_dau_units_ignore = 0
 
@@ -416,6 +417,7 @@ class DAUConv2d(base.Layer):
             strides=self.strides,
             num_dau_units_ignore=self.num_dau_units_ignore,
             mu_learning_rate_factor=self.mu_learning_rate_factor,
+            dau_unit_border_bound=self.dau_unit_border_bound,
             unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
@@ -507,6 +509,7 @@ def dau_conv2d(inputs,
              sigma_regularizer=None,
              biases_initializer=init_ops.zeros_initializer(),
              biases_regularizer=None,
+             dau_unit_border_bound=0.01,
              reuse=None,
              variables_collections=None,
              outputs_collections=None,
@@ -556,6 +559,7 @@ def dau_conv2d(inputs,
                           sigma_regularizer=sigma_regularizer,
                           bias_regularizer=biases_regularizer,
                           activity_regularizer=None,
+                          dau_unit_border_bound=dau_unit_border_bound,
                           trainable=trainable,
                           unit_testing=False,
                           name=sc.name,

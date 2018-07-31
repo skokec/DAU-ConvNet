@@ -236,6 +236,11 @@ public:
 
 	void set_processing_on_gpu(bool do_on_gpu) { do_on_gpu_ = do_on_gpu; }
 
+    void set_max_kernel_size(int kernel_w, int kernel_h) {
+        this->max_kernel_w_ = kernel_w;
+        this->max_kernel_h_ = kernel_h;
+    }
+
 	// parameters to learn
 	const Tensor* param_buffer_w_ = NULL;
 	const Tensor* param_buffer_mu1_ = NULL;
@@ -298,6 +303,11 @@ protected:
 	bool do_on_gpu_;
 };
 
+class DAUException : public std::exception {
+public:
+	DAUException() : std::exception() {}
+};
+
 //OP_REQUIRES_OK uses return, problematic for compilation in non void functions
 #define OP_REQUIRES_OK_BREAK(CTX, ...)                      \
   do {                                                      \
@@ -308,5 +318,13 @@ protected:
     }                                                       \
   } while (0)
 
+#define OP_REQUIRES_OK_THROW_EX(CTX, ...)                      \
+  do {                                                      \
+    ::tensorflow::Status _s(__VA_ARGS__);                   \
+    if (!TF_PREDICT_TRUE(_s.ok())) {                        \
+      (CTX)->CtxFailureWithWarning(__FILE__, __LINE__, _s); \
+      throw new DAUException();                            \
+    }                                                       \
+  } while (0)
 
 #endif  // CAFFE_DAU_CONV_LAYER_HPP_
