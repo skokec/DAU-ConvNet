@@ -2,11 +2,11 @@
 
 namespace  DAUConvNet {
 
-void DAUConv_forward_float_off_16_single_feat_0_single_subfeat_0(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H,
+void DAUConv_forward_float_off_16_single_feat_0_single_subfeat_1(int IMG_PATCH_SIZE_W, int IMG_PATCH_SIZE_H,
                                                                 int MAX_OFFSET_, int WARP_PIXELS_X, int WARP_PIXELS_Y,
                                                                 int BLOCK_IMAGES, int USE_INTERPOLATION,
                                                                 DAUConvForward<float>::CUDAParams &PARAMS){
-#define SINGLE_FEATURE true
+#define SINGLE_FEATURE false
 #define SINGLE_SUBFEATURE true
 #define MAX_OFFSET 16
 

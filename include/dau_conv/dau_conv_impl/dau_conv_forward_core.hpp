@@ -917,7 +917,7 @@ DAUConv_forward_pipeline_kernel(const float *filtered_images,
     int S_MEM_SIZE = S / (BATCH_COMPUTE_SUBFEATURES_SIZE * BATCH_MEM_SUBFEATURES_SIZE);
     int F_MEM_SIZE = F / (BATCH_FEATURES_SIZE * BLOCK_FEATURES);
 
-    static const int OFFSET_BLOCK_MEM_SIZE = BATCH_COMPUTE_SUBFEATURES_SIZE * BATCH_MEM_SUBFEATURES_SIZE * BATCH_GAUSS_SIZE * BATCH_FEATURES_SIZE *  BLOCK_FEATURES;
+    static const int OFFSET_BLOCK_MEM_SIZE = MAX(4,BATCH_COMPUTE_SUBFEATURES_SIZE * BATCH_MEM_SUBFEATURES_SIZE * BATCH_GAUSS_SIZE * BATCH_FEATURES_SIZE *  BLOCK_FEATURES);
     static const int WEIGHT_BLOCK_MEM_SIZE = BATCH_COMPUTE_SUBFEATURES_SIZE * BATCH_MEM_SUBFEATURES_SIZE * BATCH_GAUSS_SIZE * PIXELS_INTERPOLATION_SIZE * BATCH_FEATURES_SIZE * BLOCK_FEATURES;
 
     typedef BlockSharedMemory<NUM_THREADS,
@@ -1065,6 +1065,7 @@ DAUConv_forward_pipeline_kernel(const float *filtered_images,
         if (1){
 
             offsets_and_weights_sh_class.template load_global<OFFSET_BLOCK_MEM_SIZE+WEIGHT_BLOCK_MEM_SIZE,0,false,0>(
+            //!!#!! offsets_and_weights_sh_class.template load_global<OFFSET_BLOCK_MEM_SIZE+WEIGHT_BLOCK_MEM_SIZE,0,true,0>(
                     reinterpret_cast<const float4*>(_filter_offset_and_weights_current + offsets_and_weights_sh_class.getThreadIdx().x),
                     reinterpret_cast<float4*>(offsets_and_weights_sh_class.getDataThreadIndexingWrite(0)));
 
@@ -1079,7 +1080,7 @@ DAUConv_forward_pipeline_kernel(const float *filtered_images,
             // we should use instead the following buffer_index (NOTE: This was fixed when doing fast_gauss_backward, but not tested yet !!!!)
             int buffer_index = OFFSET(0, 0, s, 0, 1, DOUBLE_BUFFERING, BATCH_MEM_SUBFEATURES_SIZE, NUM_REPLICATE_OFFSETED+1);
 
-            //image_sh_class.template load_global<(IMG_WIDTH + 2 * MAX_OFFSET) * BATCH_N,NUM_REPLICATE_OFFSETED,true,1>(reinterpret_cast<const float4*>(_image_global_current + (s) * ((img_width + 2*MAX_OFFSET) * (img_height + 2*MAX_OFFSET) * BATCH_N)),
+            //image_sh_class.template load_global<(IMG_WIDTH + 2 * MAX_OFFSET) * BATCH_IMAGES * BLOCK_IMAGES,NUM_REPLICATE_OFFSETED,true,1>(reinterpret_cast<const float4*>(_image_global_current + (s) * ((img_width + 2*MAX_OFFSET) * (img_height + 2*MAX_OFFSET) * BATCH_IMAGES * BLOCK_IMAGES)),
             image_sh_class.template load_global<(IMG_WIDTH + 2 * MAX_OFFSET) * BATCH_IMAGES * BLOCK_IMAGES,NUM_REPLICATE_OFFSETED,false,1>(reinterpret_cast<const float4*>(_image_global_current + (s) * ((img_width + 2*MAX_OFFSET) * (img_height + 2*MAX_OFFSET) * BATCH_IMAGES * BLOCK_IMAGES)),
                                                                                                                                            reinterpret_cast<float4*>(image_sh_class.getDataThreadIndexingWrite(buffer_index)),
                                                                                                                                            (img_width + 2 * MAX_OFFSET) * BATCH_IMAGES * BLOCK_IMAGES);
@@ -1420,6 +1421,7 @@ DAUConv_forward_pipeline_kernel(const float *filtered_images,
                                                                                                                                                  pipeline.load_global.img_read_width);
                 else
                     image_sh_class.template load_global<(IMG_WIDTH + 2 * MAX_OFFSET)*BATCH_IMAGES * BLOCK_IMAGES,NUM_REPLICATE_OFFSETED,false,1>(pipeline.load_global.reading_ptr,
+                    //image_sh_class.template load_global<(IMG_WIDTH + 2 * MAX_OFFSET)*BATCH_IMAGES * BLOCK_IMAGES,NUM_REPLICATE_OFFSETED,true,1>(pipeline.load_global.reading_ptr,
                                                                                                                                                  pipeline.load_global.writing_ptr,
                                                                                                                                                  pipeline.load_global.img_read_width,
                                                                                                                                                  &ld_data[load_global.s]);
@@ -1495,7 +1497,7 @@ DAUConv_forward_pipeline_kernel(const float *filtered_images,
 
                     if (1){
 
-                        //offsets_and_weights_sh_class.template load_global<OFFSET_BLOCK_MEM_SIZE+WEIGHT_BLOCK_MEM_SIZE,0,true,0>(
+                        //!!#!! offsets_and_weights_sh_class.template load_global<OFFSET_BLOCK_MEM_SIZE+WEIGHT_BLOCK_MEM_SIZE,0,true,0>(
                         offsets_and_weights_sh_class.template load_global<OFFSET_BLOCK_MEM_SIZE+WEIGHT_BLOCK_MEM_SIZE,0,false,1>(
                                 reinterpret_cast<const float4*>(filter_offset_and_weights_next),
                                 reinterpret_cast<float4*>(off_and_w_write_addr));
@@ -1949,7 +1951,7 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
     //printf("f,s,g=(%d,%d,%d) with translate to f_block_tid=%d, f_batch_index=%d, f_block_index=%d\n", f_input_index, s_input_index, g_input_index, f_block_tid, f_batch_index, f_block_index);
 
 
-    int output_index = OFFSET8(main_f_index,
+    /*int output_index = OFFSET8(main_f_index,
                                main_s_index,
                                main_g_index,
                                s_mem_index,
@@ -1957,7 +1959,18 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
                                0,
                                f_batch_index,
                                f_block_index,
-                               dim8_size, dim7_size, dim6_size, dim5_size, dim4_size, 1, dim2_size, dim1_size) * NUM_READ_FEATURES;
+                               dim8_size, dim7_size, dim6_size, dim5_size, dim4_size, 1, dim2_size, dim1_size) * NUM_READ_FEATURES;*/
+
+    int output_index = (OFFSET(main_f_index,
+                               main_s_index,
+                               main_g_index,
+                               0,
+                               dim8_size, dim7_size, dim6_size, max(4,dim5_size * dim4_size * dim2_size * dim1_size)) +
+                        OFFSET(s_mem_index,
+                                g_index,
+                                f_batch_index,
+                                f_block_index,
+                                dim5_size, dim4_size , dim2_size,  dim1_size))* NUM_READ_FEATURES;
 
     /*printf("input index %d goes to output index %d: input s: %d, g: %d, f: %d: (out of S,G,F=%d,%d,%d) output dims: main_f_index=%d, main_s_index=%d, main_g_index=%d, s_mem_index=%d, g_index=%d, f_batch_index=%d, f_block_index=%d\n",
            input_index, output_index, s_input_index, g_input_index, f_input_index, S,G,F,
@@ -2039,7 +2052,7 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
                                        main_s_index,
                                        main_g_index,
                                        0,
-                                       dim8_size, dim7_size, dim6_size, (dim5_size * dim4_size * 1 * dim2_size * dim1_size +
+                                       dim8_size, dim7_size, dim6_size, (max(4,dim5_size * dim4_size * 1 * dim2_size * dim1_size) +
                                                                          dim5_size * dim4_size * dim3_size * dim2_size * dim1_size)) +
                                 OFFSET5(s_mem_index,
                                         g_index,
@@ -2089,9 +2102,9 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
                                  main_s_index,
                                  main_g_index,
                                  0,
-                                 dim8_size, dim7_size, dim6_size, (dim5_size * dim4_size * 1 * dim2_size * dim1_size +
+                                 dim8_size, dim7_size, dim6_size, (max(4, dim5_size * dim4_size * 1 * dim2_size * dim1_size) +
                                                                    dim5_size * dim4_size * dim3_size * dim2_size * dim1_size)) +
-                          + dim5_size * dim4_size * 1 * dim2_size * dim1_size + // offset for OFFSET_BUFFER
+                          + max(4,dim5_size * dim4_size * 1 * dim2_size * dim1_size) + // offset for OFFSET_BUFFER
                           OFFSET5(s_mem_index,
                                   g_index,
                                   0,
@@ -2204,7 +2217,7 @@ class DAUConvFwdInputWeightAndOffsets {
         NUM_BATCH_FEATURES =  BlockIndexingT::BATCH_COMPUTE_FEATURES_SIZE >= 4 ? 4 :
                               (BlockIndexingT::BATCH_COMPUTE_FEATURES_SIZE >= 2 ? 2 : 1),
 
-        OFFSET_BLOCK_MEM_SIZE = BlockIndexingT::BATCH_COMPUTE_SUBFEATURES_SIZE * BlockIndexingT::BATCH_MEM_SUBFEATURES_SIZE * BlockIndexingT::BATCH_GAUSS_SIZE * BlockIndexingT::BATCH_FEATURES_SIZE * BlockIndexingT::BLOCK_FEATURES,
+        OFFSET_BLOCK_MEM_SIZE = MAX(4,BlockIndexingT::BATCH_COMPUTE_SUBFEATURES_SIZE * BlockIndexingT::BATCH_MEM_SUBFEATURES_SIZE * BlockIndexingT::BATCH_GAUSS_SIZE * BlockIndexingT::BATCH_FEATURES_SIZE * BlockIndexingT::BLOCK_FEATURES),
         WEIGHT_BLOCK_MEM_SIZE = BlockIndexingT::BATCH_COMPUTE_SUBFEATURES_SIZE * BlockIndexingT::BATCH_MEM_SUBFEATURES_SIZE * BlockIndexingT::BATCH_GAUSS_SIZE * BlockIndexingT::PIXELS_INTERPOLATION_Dx*BlockIndexingT::PIXELS_INTERPOLATION_Dy * BlockIndexingT::BATCH_FEATURES_SIZE * BlockIndexingT::BLOCK_FEATURES,
 
     };
@@ -2439,7 +2452,7 @@ public:
             IMG_WIDTH, IMG_HEIGHT,
             MAX_OFFSET,
             //false, 5, 2> BlockIndexingPipelineT;
-            false, 4, 2> BlockIndexingPipelineT;
+            false, _SINGLE_SUBFEATURE && _SINGLE_FEATURE ?  5 : 4, 2> BlockIndexingPipelineT;
     // false, 4, 2 == USE_SEPERATE_OFFSET_AND_WEIGHTS_BUFFER, LOAD_DATA_DELAY, LOAD_W_AND_OFF_DELAY
 
     DAUConvFwdInputImage<BlockIndexingPipelineT> image_cuda_prepare;

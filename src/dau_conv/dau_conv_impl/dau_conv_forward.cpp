@@ -228,13 +228,18 @@ void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 																	   use_interpolation, params);
 		}
 	} else if (max_offset <= 16) {
-		DAUConv_forward_float_off_16_single_feat_0_single_subfeat_0(patch_size_w, patch_size_h, max_offset,
-																    warp_pixel_size_x, warp_pixel_size_y, num_images,
-																    use_interpolation, params);
 
+        if (single_feature == false)
+            DAUConv_forward_float_off_16_single_feat_0_single_subfeat_1(patch_size_w, patch_size_h, max_offset,
+                                                                        warp_pixel_size_x, warp_pixel_size_y, num_images,
+                                                                        use_interpolation, params);
+        else
+            DAUConv_forward_float_off_16_single_feat_1_single_subfeat_1(patch_size_w, patch_size_h, max_offset,
+                                                                        warp_pixel_size_x, warp_pixel_size_y, num_images,
+                                                                        use_interpolation, params);
 
 	} else if (max_offset <= 32) {
-        DAUConv_forward_float_off_32_single_feat_0_single_subfeat_0(patch_size_w, patch_size_h, max_offset,
+        DAUConv_forward_float_off_32_single_feat_1_single_subfeat_1(patch_size_w, patch_size_h, max_offset,
                                                                     warp_pixel_size_x, warp_pixel_size_y, num_images,
                                                                     use_interpolation, params);
 

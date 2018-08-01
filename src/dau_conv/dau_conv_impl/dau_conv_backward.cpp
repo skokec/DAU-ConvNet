@@ -149,11 +149,23 @@ void DAUConvBackward<Dtype>::get_allocation_sizes(const int kernel_width, const 
                                                                     size_t* prepared_error_images_size,
                                                                     size_t* prepared_filter_weights_size,
                                                                     size_t* prepared_filter_offsets_size) {
+    float actual_max_offset = (MAX(kernel_width, kernel_height)-1)/2;
+    int actual_OUT_K = OUT_K;
+    if (actual_max_offset <= 8) {
+        // do nothing (i.e. actual_OUT_K = OUT_K)
+    }else  if (actual_max_offset <= 16) {
+        actual_OUT_K = 3;
+    } else if (actual_max_offset <= 32) {
+        actual_OUT_K = 1;
+    } else{
+        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
+        throw std::exception();
+    }
 
-	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, OUT_K, IN_K, offsets_already_centered);
+	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, actual_OUT_K, IN_K, offsets_already_centered);
 
 	params.set_params_for_allocation_call(prepared_filtered_images_size, prepared_error_images_size, prepared_filter_weights_size, prepared_filter_offsets_size);
-	params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, NULL, kernel_width, kernel_height, (MAX(kernel_width, kernel_height)-1)/2, NULL,
+	params.set_params_for_kernel_call(NULL, NULL, NULL, NULL, NULL, kernel_width, kernel_height, actual_max_offset, NULL,
 									  NULL, NULL, NULL, NULL, false, 0);
 
 	call_cuda_kernel(params);
@@ -198,6 +210,8 @@ void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const D
         std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
         throw std::exception();
     }
+
+    //std::cout << "max offset: " << max_offset << " with actual offset: " << actual_max_offset << " and kernel_size=" << kernel_width << std::endl;
 
 	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
 	// since kernel_width and kernel_height are used in get_allocation_sizes()
@@ -306,7 +320,6 @@ void DAUConvBackward<float>::call_cuda_kernel(CUDAParams& params) {
 														 use_smaller_warp_and_group_k, num_images, use_interpolation,
 														 single_subfeature, params);
 		}
-
 	}
 
 }
