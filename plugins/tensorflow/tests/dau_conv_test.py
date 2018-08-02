@@ -279,15 +279,12 @@ class DAUConvTest(unittest.TestCase):
 
         self.assertTrue(avg_diff <= rel_tolerance or num_diff_rate <= 1e-2)
 
-    def test_DAUConv(self):
+    def _run_DAUConv_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init):
 
-        for i in range(10):
+        for i in range(repeat):
             mu_learning_rate_factor = 1000
-            N = 16
-            W = 32
-            H = 32
-            input_channels = 32
-            num_output = 32
+            input_channels = S
+            num_output = F
             sigma = 0.5
             x_rand = np.random.rand(N,input_channels,H,W)
             #x_rand = np.ones((16,num_output,32,32),dtype=np.float32)
@@ -295,12 +292,12 @@ class DAUConvTest(unittest.TestCase):
             x = tf.placeholder(tf.float32, shape = x_rand.shape)
 
             op = DAUConv2d(filters=num_output,
-                           dau_units=(2,2),
-                           max_kernel_size=9,
+                           dau_units=dau_uints,
+                           max_kernel_size=max_kernel_size,
                            use_bias=False,
                            weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
-                           mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
-                           mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
+                           mu1_initializer=tf.random_uniform_initializer(minval=-max_offset_init, maxval=max_offset_init,dtype=tf.float32),
+                           mu2_initializer=tf.random_uniform_initializer(minval=-max_offset_init, maxval=max_offset_init,dtype=tf.float32),
                            #weight_initializer=tf.constant_initializer(1,dtype=np.float32),
                            #mu1_initializer=tf.constant_initializer(0,dtype=np.float32),
                            #mu2_initializer=tf.constant_initializer(0,dtype=np.float32),
@@ -323,7 +320,7 @@ class DAUConvTest(unittest.TestCase):
 
             c = tf.ConfigProto(allow_soft_placement=True,
                                log_device_placement=True)
-            c.gpu_options.visible_device_list = '0'
+            c.gpu_options.visible_device_list = '2'
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
@@ -341,6 +338,7 @@ class DAUConvTest(unittest.TestCase):
 
             gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2,
                                                        sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore, unit_testing=True)
+
             # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
             r = r[:,:,:,:-2]
             r_grad[0] = r_grad[0][:,:,:,:-2]
@@ -351,81 +349,33 @@ class DAUConvTest(unittest.TestCase):
                            gt_bwd_vals[3]* mu_learning_rate_factor)
 
             self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=True)
+
             self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=True)
             self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=True)
             self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=True)
             self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
+
+    def test_DAUConv(self):
+
+        # test small kernels (9 and 17)
+        self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6)
+
+        # test with dynamic kernel size optimization (using smaller kernel dispite large allowed kernel)
+        self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3)
+
+        # test with uneven number of sub-features
+        self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=32, H=32, S=3, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=3, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10)
+
+        # test large kernels (33 and 65)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=65, max_offset_init=20)
+
 
     def test_DAUConvSingleUnit(self):
-
-        for i in range(3):
-            mu_learning_rate_factor = 1000
-            N = 16
-            W = 32
-            H = 32
-            input_channels = 32
-            num_output = 32
-            sigma = 0.5
-            x_rand = np.random.rand(N,input_channels,H,W)
-            #x_rand = np.ones((16,num_output,32,32),dtype=np.float32)
-
-            x = tf.placeholder(tf.float32, shape = x_rand.shape)
-
-            op = DAUConv2d(filters=num_output,
-                           dau_units=(1,1),
-                           max_kernel_size=9,
-                           use_bias=False,
-                           weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
-                           mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
-                           mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
-                           sigma_initializer=tf.constant_initializer(sigma),
-                           mu_learning_rate_factor=mu_learning_rate_factor,
-                           unit_testing=True)
-
-            result = op(x)
-            result_error = tf.random_normal([np.int32(x.shape[0]),num_output,
-                                             np.int32(x.shape[2]),
-                                             np.int32(x.shape[3])],dtype=tf.float32)
-
-            var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2], grad_ys=result_error)
-
-
-            init = tf.global_variables_initializer()
-
-            c = tf.ConfigProto(allow_soft_placement=True,
-                               log_device_placement=True)
-            c.gpu_options.visible_device_list = '0'
-            c.gpu_options.allow_growth = True
-
-            with tf.Session(config=c) as s:
-
-                s.run(init)
-                t_start = time.time()
-
-                r, r_error, r_grad, w, mu1, mu2  = s.run([result, result_error, var_grad, op.dau_weights, op.dau_mu1, op.dau_mu2], feed_dict = {x: x_rand})
-
-                t_end = time.time()
-                print(t_end-t_start)
-
-            gt_fwd_vals = DAUConvPython().forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2,
-                                                      sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore)
-
-            gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2,
-                                                       sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore, unit_testing=True)
-            # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
-            r = r[:,:,:,:-2]
-            r_grad[0] = r_grad[0][:,:,:,:-2]
-            gt_fwd_vals = gt_fwd_vals[:,:,:,:-2]
-            gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:-2],
-                           gt_bwd_vals[1],
-                           gt_bwd_vals[2]* mu_learning_rate_factor,
-                           gt_bwd_vals[3]* mu_learning_rate_factor)
-
-            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=True)
-            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=True)
-            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
+        # test with single DAU unit
+        self._run_DAUConv_forward_and_backward(repeat=3, N=16, W=32, H=32, S=32, F=32, dau_uints=(1,1), max_kernel_size=9, max_offset_init=3)
 
     def test_DAUConvMemtest(self):
 
@@ -461,7 +411,7 @@ class DAUConvTest(unittest.TestCase):
 
         c = tf.ConfigProto(allow_soft_placement=True,
                            log_device_placement=True)
-        c.gpu_options.visible_device_list = '0'
+        c.gpu_options.visible_device_list = '2'
         c.gpu_options.allow_growth = True
 
         with tf.Session(config=c) as s:
