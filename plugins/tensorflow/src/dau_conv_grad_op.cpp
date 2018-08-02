@@ -221,7 +221,6 @@ public:
                                                "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
             }
 
-            //std::cout << "actual_max_offset: " << actual_max_offset << " (setting kernel_size="<< dau_conv_settings_.kernel_size <<" with org kernel_size=" << this->dau_conv_settings.kernel_size<< ")" <<std::endl;
         }
         try {
 
@@ -266,8 +265,14 @@ public:
                 DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
             }
 
-        } catch (DAUException& ex) {
-            std::cout << "ERROR: got memory error in DAUConvGradOp" << std::endl;
+        } catch (const DAUExceptionTF& ex) {
+            std::cout << "ERROR: got TENSORFLOW status error in DAUConvOp" << std::endl;
+
+        } catch (const DAUException& ex) {
+            std::cout << "ERROR: got DAUException error in DAUConvOp" << std::endl;
+
+            // report message to tensorflow
+            context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
         //destroy cublas handle after end of op
         cublasDestroy(handle);

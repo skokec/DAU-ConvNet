@@ -3,6 +3,8 @@
 
 #include "dau_conv/dau_conv_impl/dau_conv_forward.hpp"
 
+#include "dau_conv/util/common.hpp"
+
 namespace DAUConvNet {
 
 #define MAX(x,y) (x > y ? x : y)
@@ -153,8 +155,7 @@ void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
 	} else if (actual_max_offset <= 32) {
 		max_offset = 32;
 	} else {
-        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
-        throw std::exception();
+        throw DAUException(string_format("ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!"));
     }
 
 	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
@@ -171,6 +172,7 @@ void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
 
     call_cuda_kernel(params);
 }
+
 template <>
 void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 
@@ -245,8 +247,7 @@ void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 
 
     } else {
-		printf("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment\n", max_offset);
-        throw std::exception();
+        throw DAUException(string_format("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment", max_offset));
 	}
 
 
@@ -264,7 +265,7 @@ void DAUConvForward<float>::call_cuda_kernel(CUDAParams& params) {
 
 template <>
 void DAUConvForward<double>::call_cuda_kernel(CUDAParams& params) {
-    throw std::exception();
+    throw DAUException("Not implemented for double");
 }
 
 template DAUConvForward<float>::DAUConvForward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const bool use_interpolation);

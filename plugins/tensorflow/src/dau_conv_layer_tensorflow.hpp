@@ -22,6 +22,8 @@ using DAUConvNet::BaseDAUComponentInitializer;
 using DAUConvNet::BaseDAUKernelCompute;
 using DAUConvNet::BaseDAUKernelOutput;
 using DAUConvNet::BaseDAUKernelParams;
+using DAUConvNet::DAUException;
+
 using namespace std;
 using namespace tensorflow;
 
@@ -303,9 +305,17 @@ protected:
 	bool do_on_gpu_;
 };
 
-class DAUException : public std::exception {
+/**
+ * We use this exception in OP_REQUIRES_OK_THROW_EX macro to mark that exception has already
+ * been reported to tensorflow context using context->CtxFailureWithWarning(...)
+ */
+class DAUExceptionTF : public std::exception {
 public:
-	DAUException() : std::exception() {}
+    DAUExceptionTF() : std::exception() {}
+
+    virtual const char* what() const noexcept {
+        return "TENSORFLOW reported status error";
+    }
 };
 
 //OP_REQUIRES_OK uses return, problematic for compilation in non void functions
@@ -323,7 +333,7 @@ public:
     ::tensorflow::Status _s(__VA_ARGS__);                   \
     if (!TF_PREDICT_TRUE(_s.ok())) {                        \
       (CTX)->CtxFailureWithWarning(__FILE__, __LINE__, _s); \
-      throw new DAUException();                            \
+      throw new DAUExceptionTF();                            \
     }                                                       \
   } while (0)
 

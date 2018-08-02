@@ -119,12 +119,10 @@ public:
         }
         void checkInputSize(int input_size, int min_allowed, const std::string& param_name, bool allow_only_multiple_of_min = true) {
             if (input_size < min_allowed) {
-                printf("Invalid %s value of %d. Min allowed %d.\n", param_name.c_str(), input_size, min_allowed);
-                throw std::exception();
+                throw DAUConvNet::DAUException(string_format("Invalid %s value of %d in DAUConvForwardCUDA. Min allowed %d.\n", param_name.c_str(), input_size, min_allowed));
             }
             if (allow_only_multiple_of_min && input_size % min_allowed != 0) {
-                printf("Invalid %s value of %d. Only a multiple of %d allowed.\n", param_name.c_str(), input_size, min_allowed);
-                throw std::exception();
+                throw DAUConvNet::DAUException(string_format("Invalid %s value of %d in DAUConvForwardCUDA. Only a multiple of %d allowed.\n", param_name.c_str(), input_size, min_allowed));
             }
         }
     };
@@ -1778,8 +1776,7 @@ public:
         threadsPerBlock = dim3 (TILE_DIM_XY, 1, 1);
 
         if (N < BLOCK_IMAGES * BATCH_IMAGES) {
-            printf("Invalid number of images: %d. Min allowed %d due to BLOCK_IMAGES=%d and BATCH_IMAGES=%d.\n", N, BLOCK_IMAGES * BATCH_IMAGES, BLOCK_IMAGES, BATCH_IMAGES);
-            throw std::exception();
+            throw DAUConvNet::DAUException(string_format("Invalid number of images: %d. Min allowed %d due to BLOCK_IMAGES=%d and BATCH_IMAGES=%d.\n", N, BLOCK_IMAGES * BATCH_IMAGES, BLOCK_IMAGES, BATCH_IMAGES));
         }
         if (N >= TILE_DIM_IMAGE_HUGE && BLOCK_IMAGES * BATCH_IMAGES <= TILE_DIM_IMAGE_HUGE)
             TILE_DIM_IMAGE = TILE_DIM_IMAGE_HUGE;
@@ -1790,8 +1787,7 @@ public:
         else if (BLOCK_IMAGES * BATCH_IMAGES <= 1)
             TILE_DIM_IMAGE = 1;
         else {
-            printf("Invalid number of images %d due to incompatability with TILE_DIM_IMAGE=[32,16,4 or 1], and (BLOCK_IMAGES=%d,BATCH_IMAGES=%d).\n", N, BLOCK_IMAGES, BATCH_IMAGES);
-            throw std::exception();
+            throw DAUConvNet::DAUException(string_format("Invalid number of images %d due to incompatability with TILE_DIM_IMAGE=[32,16,4 or 1], and (BLOCK_IMAGES=%d,BATCH_IMAGES=%d).\n", N, BLOCK_IMAGES, BATCH_IMAGES));
         }
         numBlocks = dim3( ((int)ceil(img_width_in*img_height_in) + threadsPerBlock.x - 1) / threadsPerBlock.x,	// over image width and height
                           ((int)ceil(S/(float)TILE_DIM_S) + threadsPerBlock.z - 1) / threadsPerBlock.z, // over S
@@ -2452,7 +2448,7 @@ public:
             IMG_WIDTH, IMG_HEIGHT,
             MAX_OFFSET,
             //false, 5, 2> BlockIndexingPipelineT;
-            false, _SINGLE_SUBFEATURE && _SINGLE_FEATURE ?  5 : 4, 2> BlockIndexingPipelineT;
+            false, 4, 2> BlockIndexingPipelineT;
     // false, 4, 2 == USE_SEPERATE_OFFSET_AND_WEIGHTS_BUFFER, LOAD_DATA_DELAY, LOAD_W_AND_OFF_DELAY
 
     DAUConvFwdInputImage<BlockIndexingPipelineT> image_cuda_prepare;
@@ -2583,8 +2579,7 @@ for (int jj = 0; jj < 1; ++jj) {
 		RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, true, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
 		/*RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, BLOCK_IMAGES, false, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__)*/ \
-		printf("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n"); \
-        throw std::exception(); \
+		throw DAUConvNet::DAUException(string_format("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n")); \
 	}
 #define RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, ...) \
 	if (IMG_PATCH_SIZE_H >= 64) { \
@@ -2616,8 +2611,7 @@ for (int jj = 0; jj < 1; ++jj) {
     } else if (WARP_PIXELS_Y == 8) { \
         RUN_KERNEL_R3(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, 8, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
     } else { \
-		printf("Unsupported WARP_PIXELS_Y: %d. Supported only 8 at the moment (or 1 when WARP_PIXELS_X==1 as well) \n", WARP_PIXELS_Y); \
-        throw std::exception(); \
+		throw DAUConvNet::DAUException(string_format("Unsupported WARP_PIXELS_Y: %d. Supported only 8 at the moment (or 1 when WARP_PIXELS_X==1 as well) \n", WARP_PIXELS_Y)); \
 	}
 
 #define RUN_KERNEL_R4(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, ...) \
@@ -2632,8 +2626,6 @@ for (int jj = 0; jj < 1; ++jj) {
 		    RUN_KERNEL_R1(CLASS_NAME, 2, 1, MAX_OFFSET, 2, 1, 2, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
         } else { \
             RUN_KERNEL_R1(CLASS_NAME, 4, 1, MAX_OFFSET, 4, 1, 1, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
-		    /*printf("Unsupported BATCH SIZE for 1x1 pixels: Supported only a multiple of 16 (at MAX_OFFSET<=4), 8 (at MAX_OFFSET<=8) or 4 images at the moment\n"); */ \
-            /*throw std::exception();*/ \
         } \
     } else if (IMG_PATCH_SIZE_W == 8 && WARP_PIXELS_X == 8) { \
         /* We have 8px WARP_PIXELS_X sizes only for smaller patch sizes - but check just in case (fixing IMG_PATCH_SIZE_W avoids unneeded computation as well) */ \
@@ -2653,8 +2645,7 @@ for (int jj = 0; jj < 1; ++jj) {
     } else if (WARP_PIXELS_X == 32)  { \
         RUN_KERNEL_R3(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, 32, 8, 1, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
-		printf("Unsupported WARP_PIXELS_X: %d. Supported only 16 or 32 at the moment (or 1 when WARP_PIXELS_Y==1 as well) \n", WARP_PIXELS_X); \
-        throw std::exception(); \
+		throw DAUConvNet::DAUException(string_format("Unsupported WARP_PIXELS_X: %d. Supported only 16 or 32 at the moment (or 1 when WARP_PIXELS_Y==1 as well) \n", WARP_PIXELS_X)); \
 	}
 // NOTE: RUN_KERNEL_R5, RUN_KERNEL_R6 and RUN_KERNEL_R7 below are not called directly - instead they are implemented in seperate files to allow for parallel computation
 #define RUN_KERNEL_R5(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, ...) \
@@ -2665,8 +2656,7 @@ for (int jj = 0; jj < 1; ++jj) {
 	} else if (MAX_OFFSET <= 32) { \
         RUN_KERNEL_R4(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 32, WARP_PIXELS_X, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
-        printf("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment\n", MAX_OFFSET); \
-        throw std::exception(); \
+        throw DAUConvNet::DAUException(string_format("Unsupported filter size: %d. Supported only max up to 9x9 and 17x17 at the moment\n", MAX_OFFSET)); \
     }
     /*else if (MAX_OFFSET <= 33) { \
         RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE, 16, BATCH_IMAGES, USE_INTERPOLATION, __VA_ARGS__) \

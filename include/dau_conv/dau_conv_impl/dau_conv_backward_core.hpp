@@ -115,12 +115,11 @@ namespace DAUConvNet {
         private:
             void checkInputSize(int input_size, int min_allowed, const std::string& param_name, bool allow_only_multiple_of_min = true) {
                 if (input_size < min_allowed) {
-                    printf("Invalid %s value of %d. Min allowed %d.\n", param_name.c_str(), input_size, min_allowed);
-                    throw std::exception();
+                    throw DAUConvNet::DAUException(string_format("Invalid %s value of %d in DAUConvBackwardCUDA. Min allowed %d.\n", param_name.c_str(), input_size, min_allowed));
+
                 }
                 if (allow_only_multiple_of_min && input_size % min_allowed != 0) {
-                    printf("Invalid %s value of %d. Only a multiple of %d allowed.\n", param_name.c_str(), input_size, min_allowed);
-                    throw std::exception();
+                    throw DAUConvNet::DAUException(string_format("Invalid %s value of %d in DAUConvBackwardCUDA. Only a multiple of %d allowed.\n", param_name.c_str(), input_size, min_allowed));
                 }
             }
 
@@ -2826,8 +2825,7 @@ namespace DAUConvNet {
                 weight_and_offsets_cuda_prepare(img_width, img_height, I, F, S, G) {
 
             if (NUM_K != K) {
-                printf("Invalid input K %d in DAUConvBackwardCUDA. Only a value of %d supported.\n", K, NUM_K);
-                throw std::exception();
+                throw DAUConvNet::DAUException(string_format("Invalid input K %d in DAUConvBackwardCUDA. Only a value of %d supported.\n", K, NUM_K));
             }
 
             class BlockIndexingPipelineT::Launch block_indexing;
@@ -2941,8 +2939,7 @@ namespace DAUConvNet {
         RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, true, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
     } else { \
         /*RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, false, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__)*/ \
-		printf("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n"); \
-        throw std::exception(); \
+		throw DAUConvNet::DAUException(string_format("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n")); \
     }
 
 
@@ -2956,8 +2953,7 @@ namespace DAUConvNet {
 	} else if (MAX_OFFSET <= 65) { \
         RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, 32, 1, 1, 16, 8, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
-        printf("Unsupported filter size: %d. Supported only max up to 9x9, 17x17, 33x33 and 65x65 at the moment\n", MAX_OFFSET); \
-        throw std::exception(); \
+        throw DAUConvNet::DAUException(string_format("Unsupported filter size: %d. Supported only max up to 9x9, 17x17, 33x33 and 65x65 at the moment\n", MAX_OFFSET)); \
     }
     /*else if (MAX_OFFSET <= 33) { \
         RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE, 16, BATCH_IMAGES, USE_INTERPOLATION, __VA_ARGS__) \

@@ -80,8 +80,7 @@ DAUConvBackward<Dtype>::DAUConvBackward(const int img_width_in, const int img_he
 		use_smaller_warp_and_group_k = false;
 	} else {
 		// not allowed
-		printf("Unsupported K: %d. Supported only K=3 or K=4 at the moment\n", K);
-		throw std::exception();
+		throw DAUException(string_format("Unsupported K: %d. Supported only K=3 or K=4 at the moment\n", K));
 	}
 
 	// if we do not use smaller warp then ensure patch_size_w is at least 32px
@@ -158,8 +157,7 @@ void DAUConvBackward<Dtype>::get_allocation_sizes(const int kernel_width, const 
     } else if (actual_max_offset <= 32) {
         actual_OUT_K = 1;
     } else{
-        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
-        throw std::exception();
+		throw DAUException(string_format("ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!"));
     }
 
 	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, actual_OUT_K, IN_K, offsets_already_centered);
@@ -207,11 +205,8 @@ void DAUConvBackward<Dtype>::backward_pass(const Dtype* filtered_images, const D
 		max_offset = 32;
 		actual_OUT_K = 1;
 	} else{
-        std::cout << "ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!" << std::endl;
-        throw std::exception();
+        throw DAUConvNet::DAUException("ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and unit_border_bound correctly to avoid this)!!");
     }
-
-    //std::cout << "max offset: " << max_offset << " with actual offset: " << actual_max_offset << " and kernel_size=" << kernel_width << std::endl;
 
 	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
 	// since kernel_width and kernel_height are used in get_allocation_sizes()
@@ -327,7 +322,7 @@ void DAUConvBackward<float>::call_cuda_kernel(CUDAParams& params) {
 template <>
 void DAUConvBackward<double>::call_cuda_kernel(CUDAParams& params) {
 
-	throw std::exception();
+    throw DAUConvNet::DAUException("Not implemented for double");
 }
 
 template DAUConvBackward<float>::DAUConvBackward(const int img_width_in, const int img_height_in, const int img_width, const int img_height, const int I, const int S, const int F, const int G, const int K, const bool last_k_optional, const bool use_interpolation);
