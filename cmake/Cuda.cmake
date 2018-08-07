@@ -1,11 +1,11 @@
 # Known NVIDIA GPU achitectures DAUConvNet can be compiled for.
 # This list will be used for CUDA_ARCH_NAME = All option
 if ("${CUDA_VERSION}" VERSION_GREATER "9.0" OR "${CUDA_VERSION}" VERSION_EQUAL "9.0")
-  set(cuda_known_gpu_archs "30 35 50 60 61 70")
+  set(cuda_known_gpu_archs "50 60 61 70")
 elseif ("${CUDA_VERSION}" VERSION_GREATER "8.0" OR "${CUDA_VERSION}" VERSION_EQUAL "8.0")
-  set(cuda_known_gpu_archs "30 35 50 60 61")
+  set(cuda_known_gpu_archs "50 60 61")
 else()
-  set(cuda_known_gpu_archs "30 35 50")
+  set(cuda_known_gpu_archs "50")
 endif()
 
 ################################################################################################
@@ -58,7 +58,7 @@ endfunction()
 #   dau_conv_cuda_select_nvcc_arch_flags(out_variable)
 function(dau_conv_cuda_select_nvcc_arch_flags out_variable)
   # List of arch names
-  set(__archs_names "Kepler" "Maxwell" "Pascal" "Volta" "All" "Manual")
+  set(__archs_names "Maxwell" "Pascal" "Volta" "All" "Manual")
   set(__archs_name_default "All")
   if(NOT CMAKE_CROSSCOMPILING)
     list(APPEND __archs_names "Auto")
