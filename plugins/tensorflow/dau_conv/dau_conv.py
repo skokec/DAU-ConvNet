@@ -179,8 +179,8 @@ class _DAUConvolution2d(object):
                         number_units_x=self.dau_units[0],
                         number_units_y=self.dau_units[1],
                         number_units_ignore=self.num_dau_units_ignore,
-                        kernel_size=self.max_kernel_size[0],
-                        pad=self.padding[0],
+                        kernel_size=self.max_kernel_size,
+                        pad=self.padding,
                         component_border_bound=self.dau_unit_border_bound,
                         sigma_lower_bound=0.01,
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
@@ -234,9 +234,9 @@ class DAUConv2d(base.Layer):
         self.rank = 2
         self.filters = filters
         self.dau_units = utils.normalize_tuple(dau_units, self.rank, 'dau_components')
-        self.max_kernel_size = utils.normalize_tuple(max_kernel_size, self.rank, 'max_kernel_size')
-        self.padding = list(map(lambda x: np.floor(x/2.0), self.max_kernel_size))
-        self.strides = utils.normalize_tuple(strides, self.rank, 'strides')
+        self.max_kernel_size = max_kernel_size
+        self.padding = np.floor(self.max_kernel_size/2.0)
+        self.strides = strides
         self.data_format = utils.normalize_data_format(data_format)
         self.activation = activation
         self.use_bias = use_bias
@@ -261,9 +261,9 @@ class DAUConv2d(base.Layer):
         self.sigma_constraint = sigma_constraint
 
         if self.mu1_initializer is None:
-            self.mu1_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[1]/2.0)-1, dau_unit_axis=2)
+            self.mu1_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size/2.0)-1, dau_unit_axis=2)
         if self.mu2_initializer is None:
-            self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size[0]/2.0)-1, dau_unit_axis=1)
+            self.mu2_initializer = DAUGridMean(dau_units=self.dau_units, max_value=np.floor(self.max_kernel_size/2.0)-1, dau_unit_axis=1)
 
         if self.sigma_initializer is None:
             self.sigma_initializer=init_ops.constant_initializer(0.5)
@@ -301,6 +301,11 @@ class DAUConv2d(base.Layer):
         self.dau_mu1 = None
         self.dau_mu2 = None
         self.dau_sigma = None
+
+        # show notice when using stride>1 that this is not implemented by CUDA code and is only emulating it (will have same computationa requirements as for stride=1)
+        if self.strides > 1:
+            tf.logging.warning('NOTICE: using stride larger in DAU convolution uses same computational resources as with ' +
+                               'stride=1 (current implementation only emulates stride>2 using tensor slicing).')
 
     def set_dau_variables_manually(self, w = None, mu1 = None, mu2 = None, sigma = None):
         """ Manually set w,mu1,mu2 and/or sigma variables with custom tensor. Call before build() or __call__().
@@ -414,7 +419,7 @@ class DAUConv2d(base.Layer):
             dau_units=self.dau_units,
             max_kernel_size=self.max_kernel_size,
             padding=self.padding,
-            strides=self.strides,
+            strides=1,
             num_dau_units_ignore=self.num_dau_units_ignore,
             mu_learning_rate_factor=self.mu_learning_rate_factor,
             dau_unit_border_bound=self.dau_unit_border_bound,
@@ -425,6 +430,10 @@ class DAUConv2d(base.Layer):
 
     def call(self, inputs):
         outputs = self._dau_convolution_op(inputs, self.dau_weights, self.dau_mu1, self.dau_mu2, self.dau_sigma)
+
+        # we emulate strides larger them 1 by simply sampling the output
+        if np.any(self.strides > 1):
+            outputs = outputs[:,:,::self.strides[0],self.strides[1]]
 
         if self.use_bias:
             if self.data_format == 'channels_first':
