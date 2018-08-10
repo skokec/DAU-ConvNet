@@ -145,10 +145,8 @@ class _DAUConvolution2d(object):
                 "`input` and `filter` must have rank at least 3 and at most 5")
         conv_dims = input_shape.ndims - 2
         if strides is None:
-            strides = [1] * conv_dims
-        elif len(strides) != conv_dims:
-            raise ValueError("len(strides)=%d, but should be %d" % (len(strides),
-                                                                    conv_dims))
+            strides = 1
+
         if conv_dims == 1:
             # not supported
             raise ValueError("One dimensional DAUConv not supported - only two dimensions supported.")
@@ -156,10 +154,9 @@ class _DAUConvolution2d(object):
             if data_format is None or data_format == "NHWC":
                 raise ValueError("data_format \"NHWC\" not supported - TODO: manually convert to NHWC.")
             elif data_format == "NCHW":
-                strides = [1, 1] + list(strides)
+                pass
             else:
                 raise ValueError("data_format must be \"NHWC\" or \"NCHW\".")
-            self.strides = strides
             self.data_format = data_format
             self.dau_conv_op = dau_conv_op_module.dau_conv
         elif conv_dims == 3:
@@ -167,7 +164,7 @@ class _DAUConvolution2d(object):
             raise ValueError("Three dimensional DAUConv not supported - only two dimensions supported.")
 
         # currently supporting only strides=1
-        if strides is not None and any(map(lambda x: x != 1, strides)):
+        if strides > 1:
             raise ValueError("Only strides=1 supported.")
 
     # pylint: enable=redefined-builtin
@@ -474,7 +471,7 @@ class DAUConv2d(base.Layer):
                     self.max_kernel_size[i],
                     padding=self.padding,
                     stride=self.strides[i],
-                    dilation=self.dilation_rate[i])
+                    dilation=1)
                 new_space.append(new_dim)
             return tensor_shape.TensorShape([input_shape[0]] + new_space +
                                             [self.filters])
@@ -486,8 +483,8 @@ class DAUConv2d(base.Layer):
                     space[i],
                     self.kernel_size[i],
                     padding=self.padding,
-                    stride=self.strides[i],
-                    dilation=self.dilation_rate[i])
+                    stride=self.strides,
+                    dilation=1)
                 new_space.append(new_dim)
             return tensor_shape.TensorShape([input_shape[0], self.filters] +
                                             new_space)
