@@ -301,8 +301,8 @@ class DAUConv2d(base.Layer):
 
         # show notice when using stride>1 that this is not implemented by CUDA code and is only emulating it (will have same computationa requirements as for stride=1)
         if self.strides > 1:
-            tf.logging.warning('NOTICE: using stride larger in DAU convolution uses same computational resources as with ' +
-                               'stride=1 (current implementation only emulates stride>2 using tensor slicing).')
+            tf.logging.warning('NOTICE: using stride>=2 in DAU convolution uses the same computational resources as with ' +
+                               'stride=1 (current implementation only emulates stride>=2 using tensor slicing).')
 
     def set_dau_variables_manually(self, w = None, mu1 = None, mu2 = None, sigma = None):
         """ Manually set w,mu1,mu2 and/or sigma variables with custom tensor. Call before build() or __call__().
@@ -430,7 +430,7 @@ class DAUConv2d(base.Layer):
 
         # we emulate strides larger them 1 by simply sampling the output
         if self.strides > 1:
-            outputs = outputs[:,:,::self.strides,self.strides]
+            outputs = outputs[:,:,::self.strides,::self.strides]
 
         if self.use_bias:
             if self.data_format == 'channels_first':
@@ -540,7 +540,7 @@ def dau_conv2d(inputs,
         input_rank = inputs.get_shape().ndims
 
         if input_rank != 4:
-            raise ValueError('Convolution not supported for input with rank',
+            raise ValueError('DAU convolution not supported for input with rank',
                              input_rank)
 
         df = ('channels_first'
