@@ -429,8 +429,8 @@ class DAUConv2d(base.Layer):
         outputs = self._dau_convolution_op(inputs, self.dau_weights, self.dau_mu1, self.dau_mu2, self.dau_sigma)
 
         # we emulate strides larger them 1 by simply sampling the output
-        if np.any(self.strides > 1):
-            outputs = outputs[:,:,::self.strides[0],self.strides[1]]
+        if self.strides > 1:
+            outputs = outputs[:,:,::self.strides,self.strides]
 
         if self.use_bias:
             if self.data_format == 'channels_first':
