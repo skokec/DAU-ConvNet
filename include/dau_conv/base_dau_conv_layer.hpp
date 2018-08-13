@@ -163,10 +163,10 @@ public:
 
     static const int ALLOWED_UNITS_GROUP = 2;
 
-    explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true)
+    explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true, bool dynamic_kernel_size = true)
             : cublas_handle(cublas_handle), handles_setup_(false),
               ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered),
-              enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true) {
+              enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true), dynamic_kernel_size_(dynamic_kernel_size) {
         this->aggregation.param = NULL;
         this->aggregation.kernels = NULL;
     }
@@ -183,13 +183,13 @@ public:
 
     virtual vector<int> Reshape(const vector<int>& bottom_shape, const vector<int>& top_shape);
 
-    virtual void Forward_cpu(const Dtype* bottom_data, const vector<int> bottom_shape,
-                             Dtype* top_data, const vector<int> top_shape);
+    virtual void Forward_cpu(const Dtype* bottom_data, const vector<int>& bottom_shape,
+                             Dtype* top_data, const vector<int>& top_shape);
     virtual void Backward_cpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                               const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down );
 
-    virtual void Forward_gpu(const Dtype* bottom_data, const vector<int> bottom_shape,
-                             Dtype* top_data, const vector<int> top_shape);
+    virtual void Forward_gpu(const Dtype* bottom_data, const vector<int>& bottom_shape,
+                             Dtype* top_data, const vector<int>& top_shape);
     virtual void Backward_gpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                               const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down );
 
@@ -317,6 +317,8 @@ protected:
     // NOTE: in contrast to GaussianConv we use offsets (mu1, mu2) that can be already centered around the center of kernel
     //       so that we are not constrainted by kerneL_size too much
     bool offsets_already_centered_;
+    // we can also enable dynamic kernel size so that smaller kernel sizes are used if offsets are not large
+    bool dynamic_kernel_size_;
 
     bool handles_setup_;
 

@@ -74,11 +74,6 @@ void* DAUConvLayerTensorflowGPU<Dtype>::allocate_workspace_mem(size_t bytes) {
     Tensor* tmp_ten = new Tensor();
     OP_REQUIRES_OK_THROW_EX(this->context_, this->context_->allocate_temp(tensorflow_dtype, TensorShape({total_bytes/sizeof(Dtype)}), tmp_ten));
 
-    /*if(!TF_PREDICT_TRUE(can_allocate.ok())){
-        this->own_workspace_data = NULL;
-        return this->own_workspace_data;
-    }*/
-
     //set memory pointer and allocated tensor.
     this->own_workspace_tensor = tmp_ten;
     this->own_workspace_data = TENSOR_DATA_PTR(tmp_ten,Dtype);
@@ -171,7 +166,7 @@ void DAUConvLayerTensorflowGPU<Dtype>::LayerSetUp(const DAUConvSettings& setting
     for (int i = 0; i < settings.number_units.size(); i++)
         num_units_all *= settings.number_units[i];
 
-    DCHECK_EQ(num_units_all % this->ALLOWED_UNITS_GROUP, 0);
+    CHECK_EQ(num_units_all % this->ALLOWED_UNITS_GROUP, 0);
 
     // call parent to compute all the shape variables and call initialize of parameter shape
     BaseDAUConvLayer<Dtype>::LayerSetUp(settings, param_initializer,
@@ -233,7 +228,8 @@ vector<int> DAUConvLayerTensorflowGPU<Dtype>::Reshape(const vector<int>& bottom_
 
         int interm_buf_size = 0;
         if (this->enabled_fwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_in_channels_);
-        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_out_channels_ * this->NUM_K);
+        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_out_channels_);
+        if (this->enabled_bwd_op) interm_buf_size = std::max(interm_buf_size, this->conv_in_channels_ * this->NUM_K);
 
         // use inter buffer for both fwd and bwd passes so allocate buffer with suitable size for both
         if(this->interm_buffer_ == NULL){

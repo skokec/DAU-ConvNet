@@ -129,8 +129,12 @@ public:
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
 
-    }
+        cublasCreate(&cublas_handle);
 
+    }
+    virtual ~DAUConvOp() {
+        if (cublas_handle != NULL) cublasDestroy(cublas_handle);
+    }
     void Compute(OpKernelContext* context) override {
 
         DCHECK_EQ(5, context->num_inputs());
@@ -186,7 +190,6 @@ public:
 
         Tensor* output;
         OP_REQUIRES_OK(context, context->allocate_output(0, output_shape, &output));
-
         //Check if output size of parameters equals to specified number of outputs
         //now checked in shape inference
         //DCHECK_EQ(dau_conv_settings.num_output, weights_shape.dim_size(weights_shape.dims()-1));
@@ -196,31 +199,24 @@ public:
 
 
         // Initializer does nothing; tensorflow variables are initialized in python.
-
         NullDAUComponentInitializerTensorflow<Dtype> param_initializer;
         DAUKernelComputeTFGPU<Dtype> dau_kernel_compute(context);
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
-
-        cublasHandle_t handle;
-        cublasCreate(&handle);
-        /*
-        const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
-                                                                                        -> stream()->implementation()
-                                                                                        ->CudaStreamMemberHack()) );
-        cublasSetStream(handle, (cudaStream_t) *stream);
-         */
-        //TODO Get stream from context and add it to handle..
         {
             Dtype max_mu1 = 0, max_mu2 = 0;
 
             auto mu1__ = mu1->flat<Dtype>();
             int param_size = mu1__.size();
 
-            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, handle);
-            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2,Dtype), &max_mu2, handle);
-
+            if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
+                // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
+                DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
+            else {
+                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
+                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
+            }
             Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
 
             if (actual_max_offset <= 4) {
@@ -232,9 +228,6 @@ public:
             } else if (actual_max_offset <= 32) {
                 dau_conv_settings_.kernel_size = 2 * 32 + 1;
             } else {
-                // OP_REQUIRES_OK will return so we need to release cublas handle
-                cublasDestroy(handle);
-
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT ,
                                             "DAUConvOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
             }
@@ -243,16 +236,15 @@ public:
             dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
             if (actual_max_offset != actual_max_offset) {
-                // OP_REQUIRES_OK will return so we need to release cublas handle
-                cublasDestroy(handle);
-
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
                                                "DAUConvOp ERROR: got NaN value in offset (mu1,mu2) variable"));
             }
 
         }
+
         try {
-            DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle,context);
+            DAUConvLayerTensorflowGPU<Dtype> tf_layer(cublas_handle, context);
+
 
             tf_layer.enable_forward(true);
             tf_layer.enable_backward(false);
@@ -290,10 +282,9 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
-        //destroy cublas handle after end of op
-        cublasDestroy(handle);
     }
 private:
+    cublasHandle_t cublas_handle;
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     int number_units_ignore;

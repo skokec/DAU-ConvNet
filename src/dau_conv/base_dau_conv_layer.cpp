@@ -640,8 +640,8 @@ void offset_and_sum_opencv(const Dtype* input_data,
     }
 }
     template <typename Dtype>
-void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector<int> bottom_shape,
-                                          Dtype* top_data, const vector<int> top_shape) {
+void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector<int>& bottom_shape,
+                                          Dtype* top_data, const vector<int>& top_shape) {
 
         // - first perform gaussian bluring based on variance that is fixed over the whole layer (use CuDNN for that)
     // - then perform forward pass with our custom kernel

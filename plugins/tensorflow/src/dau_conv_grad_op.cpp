@@ -94,9 +94,11 @@ public:
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
 
-
+        cublasCreate(&cublas_handle);
     }
-
+    virtual ~DAUConvGradOp() {
+        if (cublas_handle != NULL) cublasDestroy(cublas_handle);
+    }
     void Compute(OpKernelContext *context) override {
 
         DCHECK_EQ(6, context->num_inputs());
@@ -105,16 +107,17 @@ public:
         bool in_train = false;
 
         const Tensor *grad;
-        context->input("grad", &grad);
         const Tensor *input;
-        context->input("input", &input);
         const Tensor *weights;
-        context->input("weights", &weights);
         const Tensor *mu1;
-        context->input("mu1", &mu1);
         const Tensor *mu2;
-        context->input("mu2", &mu2);
         const Tensor *sigma;
+
+        context->input("grad", &grad);
+        context->input("input", &input);
+        context->input("weights", &weights);
+        context->input("mu1", &mu1);
+        context->input("mu2", &mu2);
         context->input("sigma", &sigma);
 
         TensorShape input_shape = input->shape();
@@ -134,7 +137,6 @@ public:
         DCHECK_EQ(dau_conv_settings_.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
         DCHECK_EQ(dau_conv_settings_.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
         //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
-
 
         // create output tensors
         Tensor *grad_input = NULL;
@@ -174,14 +176,6 @@ public:
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
-
-        cublasHandle_t handle;
-        cublasCreate(&handle);
-        //const cudaStream_t* stream = CHECK_NOTNULL(reinterpret_cast<const cudaStream_t*>(context->op_device_context()
-        //                                                                                -> stream()->implementation()
-        //                                                                                ->CudaStreamMemberHack()) );
-        //cublasSetStream(handle, stream);
-        //TODO Get stream from context and add it to handle..
         {
             // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
             // from the mu1/mu2 variables
@@ -190,9 +184,13 @@ public:
             auto mu1__ = mu1->flat<Dtype>();
             int param_size = mu1__.size();
 
-            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, handle);
-            DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2,Dtype), &max_mu2, handle);
-
+            if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
+                // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
+                DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
+            else {
+                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
+                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
+            }
             Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
 
             if (actual_max_offset <= 4) {
@@ -204,9 +202,6 @@ public:
             } else if (actual_max_offset <= 32) {
                 dau_conv_settings_.kernel_size = 2 * 32 + 1;
             } else  {
-                // OP_REQUIRES_OK will return so we need to release cublas handle
-                cublasDestroy(handle);
-
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT,
                                                "DAUConvGradOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
             }
@@ -214,18 +209,15 @@ public:
             dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
             if (actual_max_offset!=actual_max_offset) {
-                // OP_REQUIRES_OK will return so we need to release cublas handle
-                cublasDestroy(handle);
-
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
                                                "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
             }
 
         }
-        try {
 
+        try {
             // Tensorflow layer initialization
-            DAUConvLayerTensorflowGPU<Dtype> tf_layer(handle, context, this->unit_testing);
+            DAUConvLayerTensorflowGPU<Dtype> tf_layer(cublas_handle, context, this->unit_testing);
 
             //set parameters from input tensors
 
@@ -252,7 +244,6 @@ public:
 
             Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
 
-
             tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
                                   {true, true, true, false, false});
 
@@ -261,9 +252,10 @@ public:
                 Dtype* mu1_data = TENSOR_DATA_PTR(grad_mu1, Dtype);
                 Dtype* mu2_data = TENSOR_DATA_PTR(grad_mu2, Dtype);
 
-                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, handle);
-                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, handle);
+                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu1->NumElements(), mu_learning_rate_factor, mu1_data, cublas_handle);
+                DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, cublas_handle);
             }
+
 
         } catch (const DAUExceptionTF& ex) {
             std::cout << "ERROR: got TENSORFLOW status error in DAUConvOp" << std::endl;
@@ -274,10 +266,9 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
-        //destroy cublas handle after end of op
-        cublasDestroy(handle);
     }
 private:
+    cublasHandle_t cublas_handle;
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     float mu_learning_rate_factor;

@@ -213,7 +213,7 @@ class DAUConvLayerTensorflowGPU : public  BaseDAUConvLayer<Dtype> {
 public:
 
 	explicit DAUConvLayerTensorflowGPU(cublasHandle_t cublas_handle,OpKernelContext* context, bool ignore_edge_gradients = false)
-			: BaseDAUConvLayer<Dtype>(cublas_handle, ignore_edge_gradients), context_(context),own_workspace_data(0), do_on_gpu_(true), cublasHandle(cublas_handle) {
+			: BaseDAUConvLayer<Dtype>(cublas_handle, ignore_edge_gradients, true, false), context_(context),own_workspace_data(0), do_on_gpu_(true), cublasHandle(cublas_handle) {
 
 	}
 

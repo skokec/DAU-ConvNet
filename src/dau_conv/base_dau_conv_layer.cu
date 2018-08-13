@@ -13,14 +13,12 @@
 namespace DAUConvNet {
 
 template <typename Dtype>
-void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector<int> bottom_shape,
-                                          Dtype* top_data, const vector<int> top_shape) {
+void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector<int>& bottom_shape,
+                                          Dtype* top_data, const vector<int>& top_shape) {
 	// - first perform gaussian bluring based on variance that is fixed over the whole layer (use CuDNN for that)
 	// - then perform forward pass with our custom kernel
 	// - optionally add bias
     CHECK(this->is_data_on_gpu() == true, "Forward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
-
-	clock_t start_t = clock();
 
 	// check if we need to do merging of components;
 	// make sure we check based on steps done in backpropagation and we should avoid merging if only forward is called (by default current_iteration_index=0 so start at second iter
@@ -99,7 +97,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
         Dtype actual_max_offset = (std::max<int>(this->kernel_w_, this->kernel_h_) / 2);
 
         // optimize only when offsets are already centered and we can quickly get max abs offset value
-        if (this->offsets_already_centered_) {
+        if (this->offsets_already_centered_ && this->dynamic_kernel_size_) {
             Dtype max_mu1 = 0, max_mu2 = 0;
 
             caffe_gpu_amax(param_size, filter_offsets_float_mu1, &max_mu1, cublas_handle);
@@ -107,7 +105,6 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 
             actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
         }
-
 
         this->forward_obj->forward_pass(interm_data,
 										filter_offsets_float_mu1, filter_offsets_float_mu2, filter_weights, DAUConvForward<Dtype>::SGF,
@@ -134,8 +131,7 @@ template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* top_error, const vector<int>& top_shape, bool propagate_down,
                                            const Dtype* bottom_data, Dtype* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down ) {
 
-
-	//  - first convolve bottom input data with kernels for individual parameters (w, mu1, mu2, sigma)
+    //  - first convolve bottom input data with kernels for individual parameters (w, mu1, mu2, sigma)
 	//  - then compute and collect gradients by shifting convolved bottom input data and multiplying it with the top error data
 	//  - finally back-propagade the error by convolving top error with the rotated filters (we can use the same function as for forward-pass, but need to transpose mu1 and mu2 values)
 
@@ -144,7 +140,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
     this->current_iteration_index++;
     //return;
 
-	// get buffers for all parameters that we learn
+    // get buffers for all parameters that we learn
 	const Dtype* filter_weights = this->param_w();
 	const Dtype* filter_offsets_float_mu1 = this->param_mu1();
 	const Dtype* filter_offsets_float_mu2 = this->param_mu2();
@@ -188,7 +184,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 		Dtype actual_max_offset = (std::max<int>(this->kernel_w_, this->kernel_h_) / 2);
 
 		// optimize only when offsets are already centered and we can quickly get max abs offset value
-		if (this->offsets_already_centered_) {
+		if (this->offsets_already_centered_ && this->dynamic_kernel_size_) {
 			Dtype max_mu1 = 0, max_mu2 = 0;
 
 			caffe_gpu_amax(param_size, filter_offsets_float_mu1, &max_mu1, cublas_handle);
@@ -241,8 +237,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 									   this->buffer_bwd_.error_images,
 									   this->buffer_bwd_.filter_weights,
 									   this->buffer_bwd_.filter_offsets,
-									   //this->ignore_edge_gradients_, stream_[0]);
-                                       this->ignore_edge_gradients_, 0);
+									   this->ignore_edge_gradients_, stream_[0]);
 
 		}
 
@@ -361,6 +356,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
     CUDA_CHECK(cudaEventDestroy(memset_top));
     CUDA_CHECK(cudaEventDestroy(memset_filter));
     CUDA_CHECK(cudaEventDestroy(memset_error));
+
 }
 
 template <typename Dtype>
@@ -682,10 +678,10 @@ template void BaseDAUConvLayer<double>::set_last_n_gauss_to_zero(double* array, 
 template void BaseDAUConvLayer<float>::set_last_n_gauss_to_zero(float* array, int num_gauss_zero);
 
 
-template void BaseDAUConvLayer<double>::Forward_gpu(const double* bottom_data, const vector<int> bottom_shape,
-                                                    double* top_data, const vector<int> top_shape);
-template void BaseDAUConvLayer<float>::Forward_gpu(const float* bottom_data, const vector<int> bottom_shape,
-                                                   float* top_data, const vector<int> top_shape);
+template void BaseDAUConvLayer<double>::Forward_gpu(const double* bottom_data, const vector<int>& bottom_shape,
+                                                    double* top_data, const vector<int>& top_shape);
+template void BaseDAUConvLayer<float>::Forward_gpu(const float* bottom_data, const vector<int>& bottom_shape,
+                                                   float* top_data, const vector<int>& top_shape);
 template void BaseDAUConvLayer<double>::Backward_gpu(const double* top_data, const double* top_error, const vector<int>& top_shape, bool propagate_down,
                                                     const double* bottom_data, double* bottom_error, const vector<int>& bottom_shape, const vector<bool>& params_propagate_down );
 template void BaseDAUConvLayer<float>::Backward_gpu(const float* top_data, const float* top_error, const vector<int>& top_shape, bool propagate_down,
