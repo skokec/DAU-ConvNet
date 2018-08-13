@@ -237,7 +237,8 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 									   this->buffer_bwd_.error_images,
 									   this->buffer_bwd_.filter_weights,
 									   this->buffer_bwd_.filter_offsets,
-									   this->ignore_edge_gradients_, stream_[0]);
+                                       this->ignore_edge_gradients_, 0);
+									   //this->ignore_edge_gradients_, stream_[0]);
 
 		}
 

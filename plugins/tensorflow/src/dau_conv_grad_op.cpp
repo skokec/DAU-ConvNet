@@ -94,10 +94,10 @@ public:
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
 
-        cublasCreate(&cublas_handle);
+        //cublasCreate(&cublas_handle);
     }
     virtual ~DAUConvGradOp() {
-        if (cublas_handle != NULL) cublasDestroy(cublas_handle);
+        //if (cublas_handle != NULL) cublasDestroy(cublas_handle);
     }
     void Compute(OpKernelContext *context) override {
 
@@ -176,6 +176,9 @@ public:
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
+        cublasHandle_t cublas_handle;
+        cublasCreate(&cublas_handle);
+
         {
             // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
             // from the mu1/mu2 variables
@@ -202,6 +205,8 @@ public:
             } else if (actual_max_offset <= 32) {
                 dau_conv_settings_.kernel_size = 2 * 32 + 1;
             } else  {
+                cublasDestroy(cublas_handle);
+
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT,
                                                "DAUConvGradOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
             }
@@ -209,6 +214,8 @@ public:
             dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
             if (actual_max_offset!=actual_max_offset) {
+                cublasDestroy(cublas_handle);
+
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
                                                "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
             }
@@ -266,9 +273,11 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
+
+        cublasDestroy(cublas_handle);
     }
 private:
-    cublasHandle_t cublas_handle;
+    cublasHandle_t cublas_handle_;
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     float mu_learning_rate_factor;

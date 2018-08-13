@@ -129,11 +129,11 @@ public:
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
 
-        cublasCreate(&cublas_handle);
+        //cublasCreate(&cublas_handle);
 
     }
     virtual ~DAUConvOp() {
-        if (cublas_handle != NULL) cublasDestroy(cublas_handle);
+        //if (cublas_handle != NULL) cublasDestroy(cublas_handle);
     }
     void Compute(OpKernelContext* context) override {
 
@@ -204,6 +204,9 @@ public:
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
+        cublasHandle_t cublas_handle;
+        cublasCreate(&cublas_handle);
+
         {
             Dtype max_mu1 = 0, max_mu2 = 0;
 
@@ -228,6 +231,8 @@ public:
             } else if (actual_max_offset <= 32) {
                 dau_conv_settings_.kernel_size = 2 * 32 + 1;
             } else {
+                cublasDestroy(cublas_handle);
+
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT ,
                                             "DAUConvOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
             }
@@ -236,6 +241,8 @@ public:
             dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
 
             if (actual_max_offset != actual_max_offset) {
+                cublasDestroy(cublas_handle);
+
                 OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
                                                "DAUConvOp ERROR: got NaN value in offset (mu1,mu2) variable"));
             }
@@ -282,9 +289,10 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
+        cublasDestroy(cublas_handle);
     }
 private:
-    cublasHandle_t cublas_handle;
+    cublasHandle_t cublas_handle_;
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     int number_units_ignore;
