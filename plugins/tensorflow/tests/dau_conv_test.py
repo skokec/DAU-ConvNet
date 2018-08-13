@@ -372,6 +372,132 @@ class DAUConvTest(unittest.TestCase):
         self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10)
         self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=65, max_offset_init=20)
 
+    def test_DAUConvSpeedTest(self):
+        repeat=5
+        N=32
+        W=16
+        H=16
+        S=128
+        F=32
+        dau_uints=(2,1)
+        max_kernel_size=9
+        max_offset_init=3
+
+        dau_times = []
+
+
+        conv_times = []
+        if True:
+            input_channels = S
+            num_output = F
+            sigma = 0.5
+            x_rand = np.random.rand(N,input_channels,H,W)
+            #x = tf.placeholder(tf.float32, shape = x_rand.shape)
+            x = tf.constant(0, shape = x_rand.shape, dtype=tf.float32)
+            tmp = []
+
+            op = tf.layers.Conv2D(filters=num_output,
+                                  kernel_size=3,
+                                  use_bias=False,
+                                  padding='same',
+                                  data_format='channels_first',
+                                  kernel_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32))
+            result = op.apply(x)
+
+            tmp.append(tf.reduce_max(result))
+            #tmp.append(tf.reduce_max(x))
+
+            result_error = tf.random_normal([np.int32(x.shape[0]),num_output,
+                                             np.int32(x.shape[2]),
+                                             np.int32(x.shape[3])],dtype=tf.float32)
+
+            var_grad = tf.gradients(result, [x]+op.weights, grad_ys=result_error)
+            #var_grad = [x]+op.weights
+
+            tmp.append(tf.reduce_max(var_grad[0]))
+            tmp.append(tf.reduce_max(var_grad[1:]))
+
+            init = tf.global_variables_initializer()
+
+            c = tf.ConfigProto(allow_soft_placement=True,
+                               log_device_placement=True)
+            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.allow_growth = True
+
+            with tf.Session(config=c) as s:
+
+                s.run(init)
+                for i in range(100):
+                    t_start = time.time()
+                    #s.run([result, result_error, var_grad], feed_dict = {x: x_rand})
+                    s.run(tmp)
+                    t_end = time.time()
+                    t = t_end-t_start
+                    conv_times.append(t)
+
+        if True:
+            mu_learning_rate_factor = 1000
+            input_channels = S
+            num_output = F
+            sigma = 0.5
+            x_rand = np.random.rand(N,input_channels,H,W)
+            #x = tf.placeholder(tf.float32, shape = x_rand.shape)
+            x = tf.constant(0, shape = x_rand.shape, dtype=tf.float32)
+            tmp = []
+
+            op = DAUConv2d(filters=num_output,
+                           dau_units=dau_uints,
+                           max_kernel_size=max_kernel_size,
+                           use_bias=False,
+                           weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
+                           mu1_initializer=tf.random_uniform_initializer(minval=-max_offset_init, maxval=max_offset_init,dtype=tf.float32),
+                           mu2_initializer=tf.random_uniform_initializer(minval=-max_offset_init, maxval=max_offset_init,dtype=tf.float32),
+                           sigma_initializer=tf.constant_initializer(sigma),
+                           mu_learning_rate_factor=mu_learning_rate_factor,
+                           unit_testing=False)
+
+            result = op(x)
+
+            tmp.append(tf.reduce_max(result))
+            #tmp.append(tf.reduce_max(x))
+
+            result_error = tf.random_normal([np.int32(x.shape[0]),num_output,
+                                             np.int32(x.shape[2]),
+                                             np.int32(x.shape[3])],dtype=tf.float32)
+
+            var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2], grad_ys=result_error)
+            #var_grad = [x, op.dau_weights, op.dau_mu1, op.dau_mu2]
+
+            tmp.append(tf.reduce_max(var_grad[0]))
+            tmp.append(tf.reduce_max(var_grad[1:]))
+
+            init = tf.global_variables_initializer()
+
+            c = tf.ConfigProto(allow_soft_placement=True,
+                               log_device_placement=True)
+            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.allow_growth = True
+
+            with tf.Session(config=c) as s:
+
+                s.run(init)
+
+                for i in range(100):
+                    t_start = time.time()
+                    #s.run([result, result_error, var_grad], feed_dict = {x: x_rand})
+                    #s.run([result], feed_dict = {x: x_rand})
+                    s.run(tmp)
+                    t_end = time.time()
+                    t = t_end-t_start
+
+                    dau_times.append(t)
+
+                print("dau times: ", dau_times)
+                print("conv times: ", conv_times)
+
+                print("dau avg time: %f\n" % np.mean(dau_times[20:]))
+                print("conv avg time: %f\n" % np.mean(conv_times[20:]))
+
 
     def test_DAUConvSingleUnit(self):
         # test with single DAU unit
