@@ -128,9 +128,6 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     this->top_dim_ = 0;
     this->batch_num_ = 0;
 
-    // Initialize CUDA streams
-    stream_         = new cudaStream_t[1];
-
     // workspace data
     workspaceSizeInBytes = 0;
 
@@ -166,27 +163,24 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     aggregation.param = kernel_param;
     aggregation.param->reshape(1, 1, 1);
 
-    // by default we generate kernels with w=1, mu=(0,0) so fill buffers with them
-    // NOTE: mu=(0,0) is center of kernel so use that value
-    caffe_gpu_set(1, (Dtype)1.0f, aggregation.param->weight());
-    caffe_gpu_set(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_w_/2) : 0), aggregation.param->mu1());
-    caffe_gpu_set(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_h_/2) : 0), aggregation.param->mu2());
-
-    this->use_interpolation_ = true;
-
     paralel_streams = new cudaStream_t[4];
     for (int g = 0; g < 4; ++g) {
         CUDA_CHECK(cudaStreamCreate(&paralel_streams[g]));
     }
 
-    for (int g = 0; g < 1 ; g++) {
-        CUDA_CHECK(cudaStreamCreate(&stream_[g]));
-    }
-
+    // create default cuda stream if not using extrenal ones
+    if (this->own_cuda_stream == true)
+        CUDA_CHECK(cudaStreamCreate(&stream_));
 
     handles_setup_ = true;
 
+    // by default we generate kernels with w=1, mu=(0,0) so fill buffers with them
+    // NOTE: mu=(0,0) is center of kernel so use that value
+    caffe_gpu_set_async(1, (Dtype)1.0f, aggregation.param->weight(), stream_);
+    caffe_gpu_set_async(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_w_/2) : 0), aggregation.param->mu1(), stream_);
+    caffe_gpu_set_async(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_h_/2) : 0), aggregation.param->mu2(), stream_);
 
+    this->use_interpolation_ = true;
 
 }
 
@@ -402,15 +396,13 @@ BaseDAUConvLayer<Dtype>::~BaseDAUConvLayer() {
     // Check that handles have been setup before destroying.
     if (!handles_setup_) { return; }
 
-    for (int g = 0; g < 1 ; g++) {
-        cudaStreamDestroy(stream_[g]);
-    }
+    if (this->own_cuda_stream == true && stream_ != NULL)
+        CUDA_CHECK(cudaStreamDestroy(stream_));
 
     for (int g = 0; g < 4; ++g) {
-        cudaStreamDestroy(paralel_streams[g]);
+        CUDA_CHECK(cudaStreamDestroy(paralel_streams[g]));
     }
 
-    delete [] stream_;
     delete [] paralel_streams;
 }
 
@@ -429,7 +421,7 @@ bool BaseDAUConvLayer<Dtype>::update_prefiltering_kernels(cudaStream_t stream) {
         // we compute kernels for blur using the same code as in std-implementation but we compute only for a single
         // component i.e., num_in_channels = 1, num_out_channels = 1, num_gauss = 1, and we use weight=1, mu = [0,0]
 
-        this->kernel_compute->get_kernels(*this->aggregation.param, *this->aggregation.kernels, cublas_handle);
+        this->kernel_compute->get_kernels(*this->aggregation.param, *this->aggregation.kernels, cublas_handle, stream);
 
         this->aggregation.current_sigma = sigma;
 
@@ -663,7 +655,7 @@ void BaseDAUConvLayer<Dtype>::Forward_cpu(const Dtype* bottom_data, const vector
     const int width_out = top_shape[this->channel_axis_ + 2];
 
     // get filter for gaussian blur step
-    const Dtype* gauss_kernel = this->get_gaussian_kernel(stream_[0]);
+    const Dtype* gauss_kernel = this->get_gaussian_kernel(stream_);
 
     // get buffers for all parameters that we learn
     const Dtype* filter_weights = this->param_w();
@@ -911,10 +903,10 @@ void BaseDAUConvLayer<Dtype>::Backward_cpu(const Dtype* top_data, const Dtype* t
     Dtype* bwd_gradients_data = this->temp_bwd_gradients();
 
     // get filters for back-propagation
-    const Dtype* deriv_error_kernel = this->get_deriv_kernel_error(stream_[0]);
+    const Dtype* deriv_error_kernel = this->get_deriv_kernel_error(stream_);
 
     // get filters for param gradients
-    const Dtype* deriv_kernels_data  = this->get_deriv_kernel_params(stream_[0]);
+    const Dtype* deriv_kernels_data  = this->get_deriv_kernel_params(stream_);
 
     // intermediate data for blurred input
     Dtype* interm_data = this->temp_interm_buffer();

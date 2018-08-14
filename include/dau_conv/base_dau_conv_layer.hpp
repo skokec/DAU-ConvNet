@@ -76,7 +76,7 @@ public:
         this->offsets_already_centered = offsets_already_centered;
     }
 
-    virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, cublasHandle_t cublas_handle);
+    virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
     virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
                          int kernel_h, int kernel_w) = 0;
@@ -164,7 +164,7 @@ public:
     static const int ALLOWED_UNITS_GROUP = 2;
 
     explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true, bool dynamic_kernel_size = true)
-            : cublas_handle(cublas_handle), handles_setup_(false),
+            : cublas_handle(cublas_handle), handles_setup_(false), own_cuda_stream(true),
               ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered),
               enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true), dynamic_kernel_size_(dynamic_kernel_size) {
         this->aggregation.param = NULL;
@@ -196,6 +196,16 @@ public:
     void enable_forward(bool enable) { this->enabled_fwd_op = enable; }
     void enable_backward(bool enable) { this->enabled_bwd_op = enable; }
     void enable_memalloc_info(bool enable) {this->enabled_memalloc_info = enable; }
+
+    void set_default_cuda_stream(cudaStream_t s) {
+        // release internal stream first if we are the owners
+        if (this->own_cuda_stream == true && this->stream_ != NULL && this->handles_setup_)
+            CUDA_CHECK(cudaStreamDestroy(this->stream_));
+
+        this->stream_ = s;
+
+        this->own_cuda_stream = false;
+    }
 protected:
     virtual void compute_output_shape();
 
@@ -322,8 +332,10 @@ protected:
 
     bool handles_setup_;
 
+    bool own_cuda_stream;
+
     cublasHandle_t cublas_handle;
-    cudaStream_t*  stream_;
+    cudaStream_t  stream_;
     cudaStream_t* paralel_streams; // parallel streams for custom back-propagation kernels
 
     // main classes for computing forward and backward pass

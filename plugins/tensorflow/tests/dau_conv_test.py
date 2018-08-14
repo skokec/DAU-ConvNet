@@ -505,25 +505,25 @@ class DAUConvTest(unittest.TestCase):
 
     def test_DAUConvMemtest(self):
 
-        N = 16
-        W = 32
-        H = 32
-        input_channels = 32
-        num_output = 32
+        N = 32
+        W = 13
+        H = 13
+        input_channels = 128
+        num_output = 256
         sigma = 0.5
         x_rand = np.random.rand(N,input_channels,H,W)
 
         x = tf.placeholder(tf.float32, shape = x_rand.shape)
 
         op = DAUConv2d(filters=num_output,
-                       dau_units=(2,2),
+                       dau_units=(2,1),
                        max_kernel_size=9,
                        use_bias=False,
                        weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
                        mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
                        mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
                        sigma_initializer=tf.constant_initializer(sigma),
-                       unit_testing=True)
+                       unit_testing=False)
 
         result = op(x)
         result_error = tf.random_normal([np.int32(x.shape[0]),num_output,

@@ -1,5 +1,10 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
+
+#include "tensorflow/stream_executor/stream.h"
+#include "tensorflow/stream_executor/stream_executor_internal.h"
+#include "tensorflow/stream_executor/cuda/cuda_stream.h"
+
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
 #include "dau_conv/util/math_functions.hpp"
@@ -149,14 +154,6 @@ public:
         OP_REQUIRES_OK(context, context->allocate_output(3, mu2_shape, &grad_mu2));
         OP_REQUIRES_OK(context, context->allocate_output(4, sigma_shape, &grad_sigma));
 
-
-        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_weights,Dtype),0, grad_weights->NumElements() * sizeof(Dtype)));
-        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_mu1, Dtype),0, grad_mu1->NumElements() * sizeof(Dtype)));
-        CUDA_CHECK(cudaMemset(TENSOR_DATA_PTR(grad_mu2, Dtype),0, grad_mu2->NumElements() * sizeof(Dtype)));
-        //CUDA_CHECK(cudaMemset(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype)));
-
-
-
         std::vector<int> top_shape;
         top_shape.push_back(input_shape.dim_size(0));
         top_shape.push_back(weights->dim_size(1));
@@ -176,57 +173,71 @@ public:
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
-        cublasHandle_t cublas_handle;
-        CUBLAS_CHECK(cublasCreate(&cublas_handle));
-
-        {
-            // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
-            // from the mu1/mu2 variables
-            Dtype max_mu1 = 0, max_mu2 = 0;
-
-            auto mu1__ = mu1->flat<Dtype>();
-            int param_size = mu1__.size();
-
-            if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
-                // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
-                DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
-            else {
-                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
-                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
-            }
-            Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
-
-            if (actual_max_offset <= 4) {
-                dau_conv_settings_.kernel_size = 2 * 4 + 1;
-            } else if (actual_max_offset <= 8) {
-                dau_conv_settings_.kernel_size = 2 * 8 + 1;
-            } else if (actual_max_offset <= 16) {
-                dau_conv_settings_.kernel_size = 2 * 16 + 1;
-            } else if (actual_max_offset <= 32) {
-                dau_conv_settings_.kernel_size = 2 * 32 + 1;
-            } else  {
-                cublasDestroy(cublas_handle);
-
-                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT,
-                                               "DAUConvGradOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
-            }
-
-            dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
-
-            if (actual_max_offset!=actual_max_offset) {
-                cublasDestroy(cublas_handle);
-
-                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
-                                               "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
-            }
-
-        }
+        cublasHandle_t cublas_handle = 0;
 
         try {
-            // Tensorflow layer initialization
+
+            // get Tensorflow stream
+            auto* stream = context->op_device_context()->stream();
+            // obtain original CUDA's stream id from tensorflow stream
+            CUstream default_tf_cuda_stream = perftools::gputools::cuda::AsCUDAStreamValue(stream);
+
+            // since we cannot get cublas handle from tensorflow we need to create one
+            CUBLAS_CHECK(cublasCreate(&cublas_handle));
+            // set cublas to use the same stream as for tensorflow
+            CUBLAS_CHECK(cublasSetStream(cublas_handle, default_tf_cuda_stream));
+
+            // initialize output with zeros before we start
+            CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_weights,Dtype),0, grad_weights->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
+            CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_mu1, Dtype),0, grad_mu1->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
+            CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_mu2, Dtype),0, grad_mu2->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
+            //CUDA_CHECK(cudaMemsetAsync(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
+
+
+            // next find out max offset value and optimize the size of kernels to accommodate all offsets
+            {
+                // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
+                // from the mu1/mu2 variables
+                Dtype max_mu1 = 0, max_mu2 = 0;
+
+                auto mu1__ = mu1->flat<Dtype>();
+                int param_size = mu1__.size();
+
+                if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
+                    // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
+                    DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
+                else {
+                    DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
+                    DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
+                }
+                Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
+
+                if (actual_max_offset <= 4) {
+                    dau_conv_settings_.kernel_size = 2 * 4 + 1;
+                } else if (actual_max_offset <= 8) {
+                    dau_conv_settings_.kernel_size = 2 * 8 + 1;
+                } else if (actual_max_offset <= 16) {
+                    dau_conv_settings_.kernel_size = 2 * 16 + 1;
+                } else if (actual_max_offset <= 32) {
+                    dau_conv_settings_.kernel_size = 2 * 32 + 1;
+                } else  {
+                    OP_REQUIRES_OK_THROW_EX(context, Status(tensorflow::error::Code::INVALID_ARGUMENT,
+                                                            "DAUConvGradOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
+                }
+
+                dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
+
+                if (actual_max_offset!=actual_max_offset) {
+                    OP_REQUIRES_OK_THROW_EX(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
+                                                            "DAUConvGradOp ERROR: got NaN value in offset (mu1,mu2) variable"));
+                }
+
+            }
+
+            // then create tensorflow implementation of DAUConvLayer and set it to use tensorflow's stream and our cublas handle
             DAUConvLayerTensorflowGPU<Dtype> tf_layer(cublas_handle, context, this->unit_testing);
 
-            //set parameters from input tensors
+            tf_layer.set_default_cuda_stream(default_tf_cuda_stream);
 
             tf_layer.enable_forward(false);
             tf_layer.enable_backward(true);
@@ -274,7 +285,8 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
-        CUBLAS_CHECK(cublasDestroy(cublas_handle));
+        if (cublas_handle != NULL)
+            CUBLAS_CHECK(cublasDestroy(cublas_handle));
     }
 private:
     cublasHandle_t cublas_handle_;

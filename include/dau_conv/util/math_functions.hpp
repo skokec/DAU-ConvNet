@@ -157,7 +157,7 @@ inline void caffe_gpu_memset(const size_t N, const int alpha, void* X) {
 }
 
 template <typename Dtype>
-void caffe_gpu_add_scalar(const int N, const Dtype alpha, Dtype *X);
+void caffe_gpu_add_scalar(const int N, const Dtype alpha, Dtype *X, cudaStream_t streamId = 0);
 
 template <typename Dtype>
 void caffe_gpu_scal(const int N, const Dtype alpha, Dtype *X, cublasHandle_t cublas_handle);
@@ -166,7 +166,7 @@ template <typename Dtype>
 void caffe_gpu_scal(const int N, const Dtype alpha, Dtype* X, cublasHandle_t cublas_handle, cudaStream_t str);
 
 template <typename Dtype>
-void caffe_gpu_mul(const int N, const Dtype* a, const Dtype* b, Dtype* y);
+void caffe_gpu_mul(const int N, const Dtype* a, const Dtype* b, Dtype* y, cudaStream_t streamId = 0);
 
 template <typename Dtype>
 void caffe_gpu_dot(const int n, const Dtype* x, const Dtype* y, Dtype* out, cublasHandle_t cublas_handle);

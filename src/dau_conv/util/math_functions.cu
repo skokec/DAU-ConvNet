@@ -177,16 +177,16 @@ __global__ void add_scalar_kernel(const int n, const Dtype alpha, Dtype* y) {
 }
 
 template <>
-void caffe_gpu_add_scalar(const int N, const float alpha, float* Y) {
+void caffe_gpu_add_scalar(const int N, const float alpha, float* Y, cudaStream_t streamId ) {
   // NOLINT_NEXT_LINE(whitespace/operators)
-  add_scalar_kernel<float><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS>>>(
+  add_scalar_kernel<float><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(
       N, alpha, Y);
 }
 
 template <>
-void caffe_gpu_add_scalar(const int N, const double alpha, double* Y) {
+void caffe_gpu_add_scalar(const int N, const double alpha, double* Y, cudaStream_t streamId ) {
   // NOLINT_NEXT_LINE(whitespace/operators)
-  add_scalar_kernel<double><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS>>>(
+  add_scalar_kernel<double><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(
       N, alpha, Y);
 }
 
@@ -200,16 +200,16 @@ __global__ void mul_kernel(const int n, const Dtype* a,
 
 template <>
 void caffe_gpu_mul<float>(const int N, const float* a,
-    const float* b, float* y) {
+    const float* b, float* y, cudaStream_t streamId) {
   // NOLINT_NEXT_LINE(whitespace/operators)
-  mul_kernel<float><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS>>>(N, a, b, y);
+  mul_kernel<float><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(N, a, b, y);
 }
 
 template <>
 void caffe_gpu_mul<double>(const int N, const double* a,
-    const double* b, double* y) {
+    const double* b, double* y, cudaStream_t streamId) {
   // NOLINT_NEXT_LINE(whitespace/operators)
-  mul_kernel<double><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS>>>(N, a, b, y);
+  mul_kernel<double><<<CUDA_GET_BLOCKS(N), CUDA_NUM_THREADS, 0, streamId>>>(N, a, b, y);
 }
 
 

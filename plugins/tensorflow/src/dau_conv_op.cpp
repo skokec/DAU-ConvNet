@@ -1,8 +1,12 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor_shape.h"
-#include "tensorflow/core/platform/default/logging.h"
 #include "tensorflow/core/framework/shape_inference.h"
-//#include "tensorflow/core/util/cuda_launch_config.h"
+#include "tensorflow/core/platform/default/logging.h"
+
+#include "tensorflow/stream_executor/stream.h"
+#include "tensorflow/stream_executor/stream_executor_internal.h"
+#include "tensorflow/stream_executor/cuda/cuda_stream.h"
+
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
 
@@ -140,15 +144,6 @@ public:
         DCHECK_EQ(5, context->num_inputs());
 
         // in_train is used only for merge_iteration_step, which is not setup.
-        /*
-        AllocatorAttributes alloc_attrs;
-        tensorflow::DeviceBase* device = context->device();
-        Allocator* allocator = context->device()->GetAllocator(alloc_attrs);
-        AllocatorStats stats;
-        allocator->GetStats(&stats);
-        printf("Bytes in use %d\n",stats.bytes_in_use);
-        */
-
         bool in_train = false;
 
         const Tensor* input;
@@ -204,54 +199,62 @@ public:
         DAUKernelParamsTFGPU<Dtype> dau_kernel_params(context);
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
-        cublasHandle_t cublas_handle;
-        CUBLAS_CHECK(cublasCreate(&cublas_handle));
-
-        {
-            Dtype max_mu1 = 0, max_mu2 = 0;
-
-            auto mu1__ = mu1->flat<Dtype>();
-            int param_size = mu1__.size();
-
-            if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
-                // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
-                DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
-            else {
-                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
-                DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
-            }
-            Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
-
-            if (actual_max_offset <= 4) {
-                dau_conv_settings_.kernel_size = 2 * 4 + 1;
-            } else if (actual_max_offset <= 8) {
-                dau_conv_settings_.kernel_size = 2 * 8 + 1;
-            } else if (actual_max_offset <= 16) {
-                dau_conv_settings_.kernel_size = 2 * 16 + 1;
-            } else if (actual_max_offset <= 32) {
-                dau_conv_settings_.kernel_size = 2 * 32 + 1;
-            } else {
-                cublasDestroy(cublas_handle);
-
-                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::INVALID_ARGUMENT ,
-                                            "DAUConvOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
-            }
-
-
-            dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
-
-            if (actual_max_offset != actual_max_offset) {
-                cublasDestroy(cublas_handle);
-
-                OP_REQUIRES_OK(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
-                                               "DAUConvOp ERROR: got NaN value in offset (mu1,mu2) variable"));
-            }
-
-        }
-
+        cublasHandle_t cublas_handle = 0;
         try {
+            // get Tensorflow stream
+            auto* stream = context->op_device_context()->stream();
+            // obtain original CUDA's stream id from tensorflow stream
+            CUstream default_tf_cuda_stream = perftools::gputools::cuda::AsCUDAStreamValue(stream);
+
+            // since we cannot get cublas handle from tensorflow we need to create one
+            CUBLAS_CHECK(cublasCreate(&cublas_handle));
+            // set cublas to use the same stream as for tensorflow
+            CUBLAS_CHECK(cublasSetStream(cublas_handle, default_tf_cuda_stream));
+
+            // next find out max offset value and optimize the size of kernels to accommodate all offsets
+            {
+                Dtype max_mu1 = 0, max_mu2 = 0;
+
+                auto mu1__ = mu1->flat<Dtype>();
+                int param_size = mu1__.size();
+
+                if (TENSOR_DATA_PTR_CONST(mu1,Dtype) + param_size == TENSOR_DATA_PTR_CONST(mu2,Dtype))
+                    // if mu1 and mu2 are in contiguous memory then we can call caffe_gpu_amax only once (to reduces overhead)
+                    DAUConvNet::caffe_gpu_amax(param_size*2, TENSOR_DATA_PTR_CONST(mu1,Dtype), &max_mu1, cublas_handle);
+                else {
+                    DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu1, Dtype), &max_mu1, cublas_handle);
+                    DAUConvNet::caffe_gpu_amax(param_size, TENSOR_DATA_PTR_CONST(mu2, Dtype), &max_mu2, cublas_handle);
+                }
+                Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
+
+                if (actual_max_offset <= 4) {
+                    dau_conv_settings_.kernel_size = 2 * 4 + 1;
+                } else if (actual_max_offset <= 8) {
+                    dau_conv_settings_.kernel_size = 2 * 8 + 1;
+                } else if (actual_max_offset <= 16) {
+                    dau_conv_settings_.kernel_size = 2 * 16 + 1;
+                } else if (actual_max_offset <= 32) {
+                    dau_conv_settings_.kernel_size = 2 * 32 + 1;
+                } else {
+                    OP_REQUIRES_OK_THROW_EX(context, Status(tensorflow::error::Code::INVALID_ARGUMENT ,
+                                                            "DAUConvOp ERROR: actual offsets larger then what CUDA memory allows (setup max_kernel_size and dau_unit_border_bound correctly to avoid this)!!"));
+                }
+
+
+                dau_conv_settings_.pad = (dau_conv_settings_.kernel_size-1)/2;
+
+                if (actual_max_offset != actual_max_offset) {
+
+                    OP_REQUIRES_OK_THROW_EX(context, Status(tensorflow::error::Code::FAILED_PRECONDITION,
+                                                            "DAUConvOp ERROR: got NaN value in offset (mu1,mu2) variable"));
+                }
+
+            }
+
+            // then create tensorflow implementation of DAUConvLayer and set it to use tensorflow's stream and our cublas handle
             DAUConvLayerTensorflowGPU<Dtype> tf_layer(cublas_handle, context);
 
+            tf_layer.set_default_cuda_stream(default_tf_cuda_stream);
 
             tf_layer.enable_forward(true);
             tf_layer.enable_backward(false);
@@ -293,7 +296,8 @@ public:
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
 
-        CUBLAS_CHECK(cublasDestroy(cublas_handle));
+        if (cublas_handle != NULL)
+            CUBLAS_CHECK(cublasDestroy(cublas_handle));
     }
 private:
     cublasHandle_t cublas_handle_;

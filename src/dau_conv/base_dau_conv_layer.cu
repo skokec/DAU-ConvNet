@@ -52,7 +52,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 	const int width_out = top_shape[this->channel_axis_ + 2];
 
 	// get filter for gaussian blur step
-	const Dtype* gauss_kernel = this->get_gaussian_kernel(stream_[0]);
+	const Dtype* gauss_kernel = this->get_gaussian_kernel(stream_);
 
     // get buffers for all parameters that we learn
 	const Dtype* filter_weights = this->param_w();
@@ -87,10 +87,10 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 
 			caffe_gpu_convolve2(interm_data, out_desc,
 								bottom_data, sig_desc,
-								gauss_kernel, filt_desc, stream_[0]);
+								gauss_kernel, filt_desc, stream_);
 
-			CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_top, 0));
-			CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_filter, 0));
+			CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_top, 0));
+			CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_filter, 0));
 		}
 
         // Get maximum offset for optimizing CUDA kernel
@@ -113,7 +113,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 										buffer_fwd_.filtered_images,
 										NULL,
 										NULL,
-                                        buffer_fwd_.filter_offsets_and_weights, stream_[0]);
+                                        buffer_fwd_.filter_offsets_and_weights, stream_);
 
 		// add bias if needed
 		if (this->bias_term_) {
@@ -155,10 +155,10 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 	Dtype* bwd_gradients_data = this->temp_bwd_gradients();
 
 	// get filters for back-propagation
-	const Dtype* deriv_error_kernel = this->get_deriv_kernel_error(stream_[0]);
+	const Dtype* deriv_error_kernel = this->get_deriv_kernel_error(stream_);
 
     // get filters for param gradients
-	const Dtype* deriv_kernels_data  = this->get_deriv_kernel_params(stream_[0]);
+	const Dtype* deriv_kernels_data  = this->get_deriv_kernel_params(stream_);
 
 	// intermediate data for blurred input
 	Dtype* interm_data = this->temp_interm_buffer();
@@ -169,10 +169,11 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 	// make sure gradient aggregation buffer is zeroed
 	caffe_gpu_memset(param_size * NUM_K * sizeof(Dtype), 0, bwd_gradients_data);
 
-	cudaEvent_t memset_top, memset_filter, memset_error;
+	cudaEvent_t memset_top, memset_filter, memset_error, grad_finish;
 	CUDA_CHECK(cudaEventCreate(&memset_top));
 	CUDA_CHECK(cudaEventCreate(&memset_filter));
 	CUDA_CHECK(cudaEventCreate(&memset_error));
+	CUDA_CHECK(cudaEventCreate(&grad_finish));
 
 	{
 		// Gradient w.r.t. bias.
@@ -217,11 +218,11 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 
 				caffe_gpu_convolve2(interm_data, out_desc,
 									bottom_data, sig_desc,
-									deriv_kernels_data, filt_desc, stream_[0]);
+									deriv_kernels_data, filt_desc, stream_);
 
 
-                CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_filter, 0));
-                CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_error, 0));
+                CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_filter, 0));
+                CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_error, 0));
 
 			}
 
@@ -237,14 +238,18 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 									   this->buffer_bwd_.error_images,
 									   this->buffer_bwd_.filter_weights,
 									   this->buffer_bwd_.filter_offsets,
-                                       this->ignore_edge_gradients_, 0);
-									   //this->ignore_edge_gradients_, stream_[0]);
+									   this->ignore_edge_gradients_, stream_);
 
 		}
-
+		CUDA_CHECK(cudaEventRecord(grad_finish, stream_));
 
 		// finally perform back-propagation of the error values
 		if (propagate_down) {
+
+			// NOTE: memory buffer is shared with gradient compute so make sure not to zero it before backward_grad_obj->backward_pass is done
+			CUDA_CHECK(cudaStreamWaitEvent(stream_, grad_finish, 0));
+			CUDA_CHECK(cudaStreamWaitEvent(paralel_streams[0], grad_finish, 0));
+			CUDA_CHECK(cudaStreamWaitEvent(paralel_streams[1], grad_finish, 0));
 
             Dtype const* top_error_for_bwd = top_error;
 
@@ -252,18 +257,15 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 			// then we need to copy top_error to bigger buffer i.e. with padded zeros
 			if (buffer_bwd_.resized_top_for_bwd_sizes_ > 0) {
 				// set zeros
-				caffe_gpu_set_async<Dtype>(buffer_bwd_.resized_top_for_bwd_sizes_ / sizeof(float), (Dtype)0, buffer_bwd_.resized_top_for_bwd, stream_[0]);
+				caffe_gpu_set_async<Dtype>(buffer_bwd_.resized_top_for_bwd_sizes_ / sizeof(float), (Dtype)0, buffer_bwd_.resized_top_for_bwd, stream_);
 
 				// then copy but with appropriate padding
-				caffe_gpu_pad2d(this->batch_num_ * this->conv_out_channels_, this->height_out_, this->width_out_, this->width_/2 - this->width_out_/2, top_error, buffer_bwd_.resized_top_for_bwd, stream_[0]);
+				caffe_gpu_pad2d(this->batch_num_ * this->conv_out_channels_, this->height_out_, this->width_out_, this->width_/2 - this->width_out_/2, top_error, buffer_bwd_.resized_top_for_bwd, stream_);
 
                 top_error_for_bwd = buffer_bwd_.resized_top_for_bwd;
 			}
 			// convolve with kernels
 			{
-
-                // NOTE: memory buffer is shared with gradient compute so make sure not to zero it before backward_grad_obj->backward_pass is done
-
                 caffe_gpu_set_async<Dtype>(this->conv_in_channels_* this->batch_num_* this->height_* this->width_, (Dtype)0, bottom_error, paralel_streams[0]);
                 caffe_gpu_set_async<Dtype>(buffer_fwd_.filtered_images_sizes_ / sizeof(float), (Dtype)0, buffer_fwd_.filtered_images, paralel_streams[1]);
 
@@ -281,13 +283,12 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 
 				conv2_data_desc out_desc = sig_desc;
 
-
 				caffe_gpu_convolve2(interm_data, out_desc,
                                     top_error_for_bwd, sig_desc,
-									deriv_error_kernel, filt_desc, stream_[0]);
+									deriv_error_kernel, filt_desc, stream_);
 
-                CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_top, 0));
-                CUDA_CHECK(cudaStreamWaitEvent(stream_[0], memset_filter, 0));
+                CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_top, 0));
+                CUDA_CHECK(cudaStreamWaitEvent(stream_, memset_filter, 0));
 
 			}
 			// then use our custom kernel for forwarding, however we need to transpose kernels, which in our case means
@@ -300,19 +301,18 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 
 			// rot(mu) = (kernel_w-1) - mu
 			{
-				caffe_gpu_memcpy_async(param_size * sizeof(float), filter_offsets_float_mu1, param_mu1_backprop, 0);
-				caffe_gpu_memcpy_async(param_size * sizeof(float), filter_offsets_float_mu2, param_mu2_backprop, 0);
+				caffe_gpu_memcpy_async(param_size * sizeof(float), filter_offsets_float_mu1, param_mu1_backprop, stream_);
+				caffe_gpu_memcpy_async(param_size * sizeof(float), filter_offsets_float_mu2, param_mu2_backprop, stream_);
 
 				caffe_gpu_scal(param_size, (Dtype)-1, param_mu1_backprop, cublas_handle);
 				caffe_gpu_scal(param_size, (Dtype)-1, param_mu2_backprop, cublas_handle);
 
 				// if params are already centered then nothing else needed
 				if (this->offsets_already_centered_ == false) {
-					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_w_ - 1), param_mu1_backprop);
-					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_h_ - 1), param_mu2_backprop);
+					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_w_ - 1), param_mu1_backprop, stream_);
+					caffe_gpu_add_scalar(param_size, (Dtype) (this->kernel_h_ - 1), param_mu2_backprop, stream_);
 				}
 			}
-
 
 			// now we take the blured error data and perform sum over shifted input data with our custom kernel i.e. forward pass
 			this->backward_backporp_obj->forward_pass(interm_data,
@@ -322,18 +322,19 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 													  buffer_fwd_.filtered_images,
 													  NULL,
 													  NULL,
-													  buffer_fwd_.filter_offsets_and_weights, stream_[0]);
+													  buffer_fwd_.filter_offsets_and_weights, stream_);
 
 		}
 	}
 	// we need to accumulate gradients to the final buffer and add weights to some derivates
 	if (params_propagate_down[0] || params_propagate_down[1] ||
         params_propagate_down[2] || params_propagate_down[3]) {
+
 		// multiply gradients with appropriate weights
 		/// add add weight multiplyer as specifed by derivative formula only for mu1,mu2 and sigma
-		if (NUM_K > 1 && params_propagate_down[1]) caffe_gpu_mul(param_size, bwd_gradients_data + 1 * param_size, filter_weights, bwd_gradients_data + 1 * param_size); // mu1
-		if (NUM_K > 2 && params_propagate_down[2]) caffe_gpu_mul(param_size, bwd_gradients_data + 2 * param_size, filter_weights, bwd_gradients_data + 2 * param_size); // mu2
-		if (NUM_K > 3 && params_propagate_down[3]) caffe_gpu_mul(param_size, bwd_gradients_data + 3 * param_size, filter_weights, bwd_gradients_data + 3 * param_size); // sigma
+		if (NUM_K > 1 && params_propagate_down[1]) caffe_gpu_mul(param_size, bwd_gradients_data + 1 * param_size, filter_weights, bwd_gradients_data + 1 * param_size, stream_); // mu1
+		if (NUM_K > 2 && params_propagate_down[2]) caffe_gpu_mul(param_size, bwd_gradients_data + 2 * param_size, filter_weights, bwd_gradients_data + 2 * param_size, stream_); // mu2
+		if (NUM_K > 3 && params_propagate_down[3]) caffe_gpu_mul(param_size, bwd_gradients_data + 3 * param_size, filter_weights, bwd_gradients_data + 3 * param_size, stream_); // sigma
 
 		// for weight gradient we only accumulate to final buffer
 		if (NUM_K > 0 && params_propagate_down[0]) caffe_gpu_axpy(param_size, (Dtype)1, bwd_gradients_data + 0 * param_size, param_weights_diff, cublas_handle); // w
@@ -350,13 +351,14 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
         }
 
         // convert NaN to 0
-        if (NUM_K > 1 && params_propagate_down[1]) caffe_gpu_clip_nan(param_size, param_mu1_diff, param_mu1_diff); // mu1
-        if (NUM_K > 2 && params_propagate_down[2]) caffe_gpu_clip_nan(param_size, param_mu2_diff, param_mu2_diff); // mu2
+        if (NUM_K > 1 && params_propagate_down[1]) caffe_gpu_clip_nan(param_size, param_mu1_diff, param_mu1_diff, stream_); // mu1
+        if (NUM_K > 2 && params_propagate_down[2]) caffe_gpu_clip_nan(param_size, param_mu2_diff, param_mu2_diff, stream_); // mu2
 	}
 
     CUDA_CHECK(cudaEventDestroy(memset_top));
     CUDA_CHECK(cudaEventDestroy(memset_filter));
     CUDA_CHECK(cudaEventDestroy(memset_error));
+	CUDA_CHECK(cudaEventDestroy(grad_finish));
 
 }
 
@@ -375,7 +377,7 @@ __global__ void set_last_n_gauss_to_zero_kernel(const int S, const int G, const 
 
 template <typename Dtype>
 void BaseDAUConvLayer<Dtype>::set_last_n_gauss_to_zero(Dtype* array, int num_gauss_zero){
-    set_last_n_gauss_to_zero_kernel<Dtype><<<CUDA_GET_BLOCKS(this->conv_in_channels_ * this->units_per_channel * this->conv_out_channels_), CUDA_NUM_THREADS>>>(this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_, array, num_gauss_zero);
+    set_last_n_gauss_to_zero_kernel<Dtype><<<CUDA_GET_BLOCKS(this->conv_in_channels_ * this->units_per_channel * this->conv_out_channels_), CUDA_NUM_THREADS, 0, stream_>>>(this->conv_in_channels_, this->units_per_channel, this->conv_out_channels_, array, num_gauss_zero);
 }
 
 
@@ -501,7 +503,7 @@ __global__ void mirror_kernel(const int S, const int F, const int n, const Dtype
 
 
 template <typename Dtype>
-void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, cublasHandle_t cublas_handle) {
+void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id) {
 
 	// we get mutable ptr but we do not modify it, this is just poor code in part of the CUB code
 	int* tmp_precomp_index_gpu = this->precomp_index();
@@ -527,7 +529,7 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	const int K_h = this->kernel_h;
 
 	// clip sigma, mu1 and mu2 to within bounds
-	caffe_gpu_clip_lower(S*F*G, this->sigma_lower_bound, gauss_params_sigma, gauss_params_sigma);
+	caffe_gpu_clip_lower(S*F*G, this->sigma_lower_bound, gauss_params_sigma, gauss_params_sigma, stream_id);
 
 	Dtype mu1_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_w/2) + component_border_bound);
 	Dtype mu2_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_h/2) + component_border_bound);
@@ -536,15 +538,15 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	Dtype mu2_upper_limit = this->offsets_already_centered  == false ? kernel_h-1 - (Dtype)component_border_bound : ((int)(kernel_h/2) - component_border_bound);
 
 
-	caffe_gpu_clip_lower(S*F*G, mu1_lower_limit, gauss_params_mu1, gauss_params_mu1);
-	caffe_gpu_clip_lower(S*F*G, mu2_lower_limit, gauss_params_mu2, gauss_params_mu2);
+	caffe_gpu_clip_lower(S*F*G, mu1_lower_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
+	caffe_gpu_clip_lower(S*F*G, mu2_lower_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
 
-	caffe_gpu_clip_upper(S*F*G, mu1_upper_limit, gauss_params_mu1, gauss_params_mu1);
-	caffe_gpu_clip_upper(S*F*G, mu2_upper_limit, gauss_params_mu2, gauss_params_mu2);
+	caffe_gpu_clip_upper(S*F*G, mu1_upper_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
+	caffe_gpu_clip_upper(S*F*G, mu2_upper_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
 
 
 	// 0. precompute  sigma^2, sigma^3 and (sigma^2)/2
-	conv_gauss_precompute_sigma_kernel<Dtype><<<CUDA_GET_BLOCKS(S*G*F), CUDA_NUM_THREADS>>>(S*G*F, gauss_params_sigma, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, this->sigma_lower_bound);
+	conv_gauss_precompute_sigma_kernel<Dtype><<<CUDA_GET_BLOCKS(S*G*F), CUDA_NUM_THREADS, 0, stream_id>>>(S*G*F, gauss_params_sigma, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, this->sigma_lower_bound);
 
 
 	// 1. for each pixel in [SxGxF] x [K_w x K_h] compute G (Gauss distribution), dG/dx, dG/dy, dG/dsigma
@@ -564,7 +566,7 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	Dtype* deriv_mu2 = output.d_params() + 2 * d_param_size;
 	Dtype* deriv_sigma = output.d_params() + 3 * d_param_size;
 
-	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock>>>(S*G*F, K_w, K_h, this->offsets_already_centered, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
+	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S*G*F, K_w, K_h, this->offsets_already_centered, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
 
 	// 2. for each filter (G, dG/dx, dG/dy, dG/dsigma) calculate sums (use different sums if using normalization by square sum)
 	Dtype* guass_norm = this->param_temp(GAUSS_NORM);
@@ -575,9 +577,9 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	// TODO: all three sums can be done in parallel, do we need seperate streams to make this run in parallel ?
 	if (this->use_unit_normalization == false) {
 		// if there is no normalization then there should be no derivative of normalization
-		caffe_gpu_set((S*F*G), (Dtype)0, deriv_mu1_sums);
-		caffe_gpu_set((S*F*G), (Dtype)0, deriv_mu2_sums);
-		caffe_gpu_set((S*F*G), (Dtype)0, deriv_sigma_sums);
+		caffe_gpu_set_async((S*F*G), (Dtype)0, deriv_mu1_sums, stream_id);
+		caffe_gpu_set_async((S*F*G), (Dtype)0, deriv_mu2_sums, stream_id);
+		caffe_gpu_set_async((S*F*G), (Dtype)0, deriv_sigma_sums, stream_id);
 
 	} else if (this->use_square_unit_normalization) {
 		// when using square gauss normalization derivatives dG/dx, dG/dy, dG/dsigma need to be multiplied by un-weighted, un-normalized gaussian dstirubution i.e. gauss_dist
@@ -585,76 +587,76 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 		Dtype* deriv_mu2_times_gauss_dist = this->kernels_temp(DERIV_MU2_TIMES_GAUSS_DIST);
 		Dtype* deriv_sigma_times_gauss_dist = this->kernels_temp(DERIV_SIGMA_TIMES_GAUSS_DIST);
 
-		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_mu1, deriv_mu1_times_gauss_dist); // deriv_mu1_times_gauss_dist = gauss_dist * deriv_mu1;
-		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_mu2, deriv_mu2_times_gauss_dist); // deriv_mu2_times_gauss_dist = gauss_dist * deriv_mu2;
-		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_sigma, deriv_sigma_times_gauss_dist); // deriv_sigma_times_gauss_dist = gauss_dist * deriv_sigma;
+		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_mu1, deriv_mu1_times_gauss_dist, stream_id); // deriv_mu1_times_gauss_dist = gauss_dist * deriv_mu1;
+		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_mu2, deriv_mu2_times_gauss_dist, stream_id); // deriv_mu2_times_gauss_dist = gauss_dist * deriv_mu2;
+		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, deriv_sigma, deriv_sigma_times_gauss_dist, stream_id); // deriv_sigma_times_gauss_dist = gauss_dist * deriv_sigma;
 
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu1_times_gauss_dist, deriv_mu1_sums, S*F*G, tmp_precomp_index_gpu);
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu2_times_gauss_dist, deriv_mu2_sums, S*F*G, tmp_precomp_index_gpu);
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_sigma_times_gauss_dist, deriv_sigma_sums, S*F*G, tmp_precomp_index_gpu);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu1_times_gauss_dist, deriv_mu1_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu2_times_gauss_dist, deriv_mu2_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_sigma_times_gauss_dist, deriv_sigma_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
 
 		caffe_gpu_scal((S*F*G), (Dtype)2, deriv_mu1_sums, cublas_handle);
 		caffe_gpu_scal((S*F*G), (Dtype)2, deriv_mu2_sums, cublas_handle);
 		caffe_gpu_scal((S*F*G), (Dtype)2, deriv_sigma_sums, cublas_handle);
 	} else {
 
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu1, deriv_mu1_sums, S*F*G, tmp_precomp_index_gpu);
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu2, deriv_mu2_sums, S*F*G, tmp_precomp_index_gpu);
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_sigma, deriv_sigma_sums, S*F*G, tmp_precomp_index_gpu);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu1, deriv_mu1_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_mu2, deriv_mu2_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), deriv_sigma, deriv_sigma_sums, S*F*G, tmp_precomp_index_gpu, false, stream_id);
 	}
 
 	if (this->use_unit_normalization == false) {
 		// set guass_norm to 1 if we sould NOT normalize to sum of 1
-		caffe_gpu_set((S*F*G), (Dtype)1, guass_norm);
+		caffe_gpu_set_async((S*F*G), (Dtype)1, guass_norm, stream_id);
 
 	} else if (this->use_square_unit_normalization) {
 		// we need to normalize to sum of squares to 1
 		Dtype* gauss_dist_square = this->kernels_temp(GAUSS_DIST_SQUARE);
 
-		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, gauss_dist, gauss_dist_square); // gauss_dist_square = gauss_dist * gauss_dist;
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), gauss_dist_square, guass_norm, S*F*G, tmp_precomp_index_gpu);
+		caffe_gpu_mul((S*F*G) * (K_w*K_h), gauss_dist, gauss_dist, gauss_dist_square, stream_id); // gauss_dist_square = gauss_dist * gauss_dist;
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), gauss_dist_square, guass_norm, S*F*G, tmp_precomp_index_gpu, false,  stream_id);
 	} else {
 		// we need to normalize to sum of 1
-		caffe_gpu_sum((S*F*G) * (K_w*K_h), gauss_dist, guass_norm, S*F*G, tmp_precomp_index_gpu);
+		caffe_gpu_sum((S*F*G) * (K_w*K_h), gauss_dist, guass_norm, S*F*G, tmp_precomp_index_gpu, false, stream_id);
 	}
 
 	// invert guass_norm i.e. guass_norm = 1/guass_norm
-	inv_kernel<Dtype><<<CUDA_GET_BLOCKS(S*G*F), CUDA_NUM_THREADS>>>(S*G*F, guass_norm, guass_norm);
+	inv_kernel<Dtype><<<CUDA_GET_BLOCKS(S*G*F), CUDA_NUM_THREADS, 0, stream_id>>>(S*G*F, guass_norm, guass_norm);
 
 	// gauss_mu1_sum = abs(gauss_mu1_sum) > 1e-10 ? gauss_mu1_sum : 0;
-	caffe_gpu_clip_eps(S*F*G, (Dtype)1e-10, deriv_mu1_sums, deriv_mu1_sums);
-	caffe_gpu_clip_eps(S*F*G, (Dtype)1e-10, deriv_mu2_sums, deriv_mu2_sums);
+	caffe_gpu_clip_eps(S*F*G, (Dtype)1e-10, deriv_mu1_sums, deriv_mu1_sums, stream_id);
+	caffe_gpu_clip_eps(S*F*G, (Dtype)1e-10, deriv_mu2_sums, deriv_mu2_sums, stream_id);
 
 	// 3. for each filter G and derivative filters dG/dx, dG/dy, dG/dsigma apply its normalization terms
 	threadsPerBlock = dim3(K_w* K_h, CUDA_NUM_THREADS/(K_w * K_h));
 	numBlocks = dim3(1, (S*F*G + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
 	// deriv_weight = gauss_dist * guass_norm
-	scal_kernel_batched<Dtype><<<numBlocks,threadsPerBlock>>>(K_w * K_h, guass_norm, gauss_dist, deriv_weight, S*F*G);
+	scal_kernel_batched<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(K_w * K_h, guass_norm, gauss_dist, deriv_weight, S*F*G);
 
 	// !after! weight and deriv_weight are computed we can add weight to guass_norm which will be used in remaining derivateives and main kernel
-	caffe_gpu_mul(S*F*G, gauss_params_w, guass_norm, guass_norm); // guass_norm = gauss_params_w / guass_norm;
+	caffe_gpu_mul(S*F*G, gauss_params_w, guass_norm, guass_norm, stream_id); // guass_norm = gauss_params_w / guass_norm;
 
 
 	// apply gauss normalization factors directly to sums to avoid additional call to scal_kernel_batched
-	caffe_gpu_mul(S*F*G, guass_norm, deriv_mu1_sums, deriv_mu1_sums); // deriv_mu1_sums = deriv_mu1_sums * guass_norm;
-	caffe_gpu_mul(S*F*G, guass_norm, deriv_mu2_sums, deriv_mu2_sums); // deriv_mu2_sums = deriv_mu2_sums * guass_norm;
-	caffe_gpu_mul(S*F*G, guass_norm, deriv_sigma_sums, deriv_sigma_sums); // deriv_sigma_sums = deriv_sigma_sums * guass_norm;
+	caffe_gpu_mul(S*F*G, guass_norm, deriv_mu1_sums, deriv_mu1_sums, stream_id); // deriv_mu1_sums = deriv_mu1_sums * guass_norm;
+	caffe_gpu_mul(S*F*G, guass_norm, deriv_mu2_sums, deriv_mu2_sums, stream_id); // deriv_mu2_sums = deriv_mu2_sums * guass_norm;
+	caffe_gpu_mul(S*F*G, guass_norm, deriv_sigma_sums, deriv_sigma_sums, stream_id); // deriv_sigma_sums = deriv_sigma_sums * guass_norm;
 
 	// create normalized derivative filters
-	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock>>>(K_w * K_h, (Dtype)-1, deriv_mu1_sums, deriv_weight,  guass_norm, deriv_mu1, S*F*G);
-	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock>>>(K_w * K_h, (Dtype)-1, deriv_mu2_sums, deriv_weight,  guass_norm, deriv_mu2, S*F*G);
-	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock>>>(K_w * K_h, (Dtype)-1, deriv_sigma_sums, deriv_weight,  guass_norm, deriv_sigma, S*F*G);
+	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(K_w * K_h, (Dtype)-1, deriv_mu1_sums, deriv_weight,  guass_norm, deriv_mu1, S*F*G);
+	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(K_w * K_h, (Dtype)-1, deriv_mu2_sums, deriv_weight,  guass_norm, deriv_mu2, S*F*G);
+	axpby_kernel_batched<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(K_w * K_h, (Dtype)-1, deriv_sigma_sums, deriv_weight,  guass_norm, deriv_sigma, S*F*G);
 
 	// 4. calculate main kernel weights by applying gauss norm and weights, and suming over SxGxF kernels into FxS kernels (in correct order i.e. rearagning them at the same time)
 
 	// gauss_dist = w/norm * gauss_dist (note, guass_norm should be w/norm)
-	scal_kernel_batched<Dtype><<<numBlocks,threadsPerBlock>>>(K_w * K_h, guass_norm, gauss_dist, gauss_dist, S*F*G);
+	scal_kernel_batched<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(K_w * K_h, guass_norm, gauss_dist, gauss_dist, S*F*G);
 
 	threadsPerBlock = dim3(K_w*K_h, sqrt(CUDA_NUM_THREADS/(K_w * K_h) ), sqrt(CUDA_NUM_THREADS/(K_w * K_h) ) );
 	numBlocks = dim3(1, (S + threadsPerBlock.y - 1) / threadsPerBlock.y, (F + threadsPerBlock.z - 1) / threadsPerBlock.z);
 
-	add_sorted_kernel<Dtype><<<numBlocks,threadsPerBlock>>>(S, G, F, K_w*K_h, gauss_dist, weight);
+	add_sorted_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S, G, F, K_w*K_h, gauss_dist, weight);
 
 	// 4. calculate seperable filters (WILL NOT IMPLEMENET)
 
@@ -665,15 +667,15 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	threadsPerBlock = dim3(K_w*K_h, sqrt(CUDA_NUM_THREADS/(K_w * K_h) ), sqrt(CUDA_NUM_THREADS/(K_w * K_h) ) );
 	numBlocks = dim3(1, (S + threadsPerBlock.y - 1) / threadsPerBlock.y, (F + threadsPerBlock.z - 1) / threadsPerBlock.z);
 
-	mirror_kernel<Dtype><<<numBlocks,threadsPerBlock>>>(S, F, K_w*K_h, weight, deriv_error);
+	mirror_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S, F, K_w*K_h, weight, deriv_error);
 
 	//cudaDeviceSynchronize();
 
 	clock_t end_t = clock();
 }
 
-template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, cublasHandle_t cublas_handle);
-template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, cublasHandle_t cublas_handle);
+template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
 template void BaseDAUConvLayer<double>::set_last_n_gauss_to_zero(double* array, int num_gauss_zero);
 template void BaseDAUConvLayer<float>::set_last_n_gauss_to_zero(float* array, int num_gauss_zero);
