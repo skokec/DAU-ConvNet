@@ -160,8 +160,8 @@ void DAUConvForward<Dtype>::forward_pass(const Dtype* filtered_images,
 
 	// To ensure we have enough memory we require max_offset not to exceed kernel_width or kernel_height
 	// since kernel_width and kernel_height are used in get_allocation_sizes()
-	CHECK(kernel_width >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_width.");
-	CHECK(kernel_height >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_height.");
+	DAU_CHECK(kernel_width >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_width.");
+	DAU_CHECK(kernel_height >= max_offset*2+1, "Maximum offset values exceeds boundries as defined by kernel_height.");
 
 	CUDAParams params(img_width_in, img_height_in, img_width, img_height, I, S, F, G, offsets_already_centered);
 

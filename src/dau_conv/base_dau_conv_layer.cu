@@ -18,7 +18,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 	// - first perform gaussian bluring based on variance that is fixed over the whole layer (use CuDNN for that)
 	// - then perform forward pass with our custom kernel
 	// - optionally add bias
-    CHECK(this->is_data_on_gpu() == true, "Forward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
+    DAU_CHECK(this->is_data_on_gpu() == true, "Forward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
 
 	// check if we need to do merging of components;
 	// make sure we check based on steps done in backpropagation and we should avoid merging if only forward is called (by default current_iteration_index=0 so start at second iter
@@ -135,7 +135,7 @@ void BaseDAUConvLayer<Dtype>::Backward_gpu(const Dtype* top_data, const Dtype* t
 	//  - then compute and collect gradients by shifting convolved bottom input data and multiplying it with the top error data
 	//  - finally back-propagade the error by convolving top error with the rotated filters (we can use the same function as for forward-pass, but need to transpose mu1 and mu2 values)
 
-    CHECK(this->is_data_on_gpu() == true, "Backward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
+    DAU_CHECK(this->is_data_on_gpu() == true, "Backward_gpu requires data on GPU, but is_data_on_gpu() returned false !");
 
     this->current_iteration_index++;
     //return;

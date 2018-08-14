@@ -38,6 +38,12 @@
 void __M_Assert(const char* expr_str, bool expr, const char* file, int line, const char* msg);
 
 
+#ifndef DAU_CHECK
+#define DAU_CHECK(Expr,Msg ) \
+ if ((Expr) == false) { throw DAUConvNet::DAUException(string_format("ASSERT ERROR: %s\n", Msg)); }
+
+#endif
+
 //
 // CUDA macros
 //
@@ -48,7 +54,7 @@ void __M_Assert(const char* expr_str, bool expr, const char* file, int line, con
   /* Code block avoids redefinition of cudaError_t error */ \
   do { \
     cudaError_t error = condition; \
-    M_Assert(error == cudaSuccess, cudaGetErrorString(error)); \
+    DAU_CHECK(error == cudaSuccess, cudaGetErrorString(error)); \
   } while (0)
 #endif
 
@@ -56,7 +62,7 @@ void __M_Assert(const char* expr_str, bool expr, const char* file, int line, con
 #define CUBLAS_CHECK(condition) \
   do { \
     cublasStatus_t status = condition; \
-    M_Assert(status == CUBLAS_STATUS_SUCCESS, DAUConvNet::cublasGetErrorString(status)); \
+    DAU_CHECK(status == CUBLAS_STATUS_SUCCESS, DAUConvNet::cublasGetErrorString(status)); \
   } while (0)
 #endif
 
@@ -107,12 +113,6 @@ std::string string_format( const std::string& format, Args ... args )
     return std::string( buf.get(), size - 1 ); // We don't want the '\0' inside
 }
 
-
-#ifndef CHECK
-#define CHECK(Expr,Msg ) \
- if ((Expr) == false) { throw DAUConvNet::DAUException(string_format("ASSERT ERROR: %s\n", Msg)); }
-
-#endif
 
 
 

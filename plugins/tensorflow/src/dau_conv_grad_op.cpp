@@ -177,7 +177,7 @@ public:
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
         cublasHandle_t cublas_handle;
-        cublasCreate(&cublas_handle);
+        CUBLAS_CHECK(cublasCreate(&cublas_handle));
 
         {
             // Optimize the size of kernel (dau_conv_settings_.kernel_size) by matching it with the actual max offset
@@ -263,6 +263,7 @@ public:
                 DAUConvNet::caffe_gpu_scal<Dtype>(grad_mu2->NumElements(), mu_learning_rate_factor, mu2_data, cublas_handle);
             }
 
+            CUDA_CHECK(cudaDeviceSynchronize());
 
         } catch (const DAUExceptionTF& ex) {
             std::cout << "ERROR: got TENSORFLOW status error in DAUConvOp" << std::endl;
@@ -273,8 +274,7 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
-
-        cublasDestroy(cublas_handle);
+        CUBLAS_CHECK(cublasDestroy(cublas_handle));
     }
 private:
     cublasHandle_t cublas_handle_;

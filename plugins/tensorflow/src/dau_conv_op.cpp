@@ -205,7 +205,7 @@ public:
         DAUKernelOutputTFGPU<Dtype> dau_kernel_output(context);
 
         cublasHandle_t cublas_handle;
-        cublasCreate(&cublas_handle);
+        CUBLAS_CHECK(cublasCreate(&cublas_handle));
 
         {
             Dtype max_mu1 = 0, max_mu2 = 0;
@@ -280,6 +280,9 @@ public:
 
             tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
+            //DAUConvNet::caffe_gpu_set<Dtype>(output->NumElements(), 1, top_data);
+
+            CUDA_CHECK(cudaDeviceSynchronize());
         } catch (const DAUExceptionTF& ex) {
             std::cout << "ERROR: got TENSORFLOW status error in DAUConvOp" << std::endl;
 
@@ -289,7 +292,8 @@ public:
             // report message to tensorflow
             context->CtxFailureWithWarning(Status(tensorflow::error::Code::INTERNAL, ex.what()));
         }
-        cublasDestroy(cublas_handle);
+
+        CUBLAS_CHECK(cublasDestroy(cublas_handle));
     }
 private:
     cublasHandle_t cublas_handle_;
