@@ -212,6 +212,10 @@ public:
                 }
                 Dtype actual_max_offset = std::max<Dtype>(std::abs(max_mu1), std::abs(max_mu2));
 
+                // apply artificial limit to offset (based on user provided kernel_size and component_border_bound values)
+                // (any offset larger then this limit will be artificially cliped by forward/backward call)
+                actual_max_offset = std::min<Dtype>(actual_max_offset, dau_conv_settings.kernel_size - dau_conv_settings.component_border_bound);
+
                 if (actual_max_offset <= 4) {
                     dau_conv_settings_.kernel_size = 2 * 4 + 1;
                 } else if (actual_max_offset <= 8) {
