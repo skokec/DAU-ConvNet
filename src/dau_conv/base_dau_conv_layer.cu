@@ -30,7 +30,7 @@ void BaseDAUConvLayer<Dtype>::Forward_gpu(const Dtype* bottom_data, const vector
 	}
 
     // before we get params we need to ensure params are within valid bounds
-    {
+    if (this->enable_unit_bounds_guard_ == true) {
         // we still need to ensure our values are within valid bounds
         // clip sigma, mu1 and mu2 to within bounds
         caffe_gpu_clip_lower(this->conv_in_channels_*this->units_per_channel*this->conv_out_channels_, this->unit_sigma_lower_bound, this->param_sigma(), this->param_sigma());
@@ -503,7 +503,8 @@ __global__ void mirror_kernel(const int S, const int F, const int n, const Dtype
 
 
 template <typename Dtype>
-void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id) {
+void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, bool enable_unit_bounds_guard,
+                                              cublasHandle_t cublas_handle, cudaStream_t stream_id) {
 
 	// we get mutable ptr but we do not modify it, this is just poor code in part of the CUB code
 	int* tmp_precomp_index_gpu = this->precomp_index();
@@ -528,22 +529,23 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	const int K_w = this->kernel_w;
 	const int K_h = this->kernel_h;
 
-	// clip sigma, mu1 and mu2 to within bounds
-	caffe_gpu_clip_lower(S*F*G, this->sigma_lower_bound, gauss_params_sigma, gauss_params_sigma, stream_id);
+    if (enable_unit_bounds_guard) {
+        // clip sigma, mu1 and mu2 to within bounds - this can be disabled for tensorflow implementation (done in python)
+        caffe_gpu_clip_lower(S*F*G, this->sigma_lower_bound, gauss_params_sigma, gauss_params_sigma, stream_id);
 
-	Dtype mu1_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_w/2) + component_border_bound);
-	Dtype mu2_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_h/2) + component_border_bound);
+        Dtype mu1_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_w/2) + component_border_bound);
+        Dtype mu2_lower_limit = this->offsets_already_centered  == false ? (Dtype)component_border_bound : (-1* (int)(kernel_h/2) + component_border_bound);
 
-	Dtype mu1_upper_limit = this->offsets_already_centered  == false ? kernel_w-1 - (Dtype)component_border_bound : ((int)(kernel_w/2) - component_border_bound);
-	Dtype mu2_upper_limit = this->offsets_already_centered  == false ? kernel_h-1 - (Dtype)component_border_bound : ((int)(kernel_h/2) - component_border_bound);
+        Dtype mu1_upper_limit = this->offsets_already_centered  == false ? kernel_w-1 - (Dtype)component_border_bound : ((int)(kernel_w/2) - component_border_bound);
+        Dtype mu2_upper_limit = this->offsets_already_centered  == false ? kernel_h-1 - (Dtype)component_border_bound : ((int)(kernel_h/2) - component_border_bound);
 
 
-	caffe_gpu_clip_lower(S*F*G, mu1_lower_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
-	caffe_gpu_clip_lower(S*F*G, mu2_lower_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
+        caffe_gpu_clip_lower(S*F*G, mu1_lower_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
+        caffe_gpu_clip_lower(S*F*G, mu2_lower_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
 
-	caffe_gpu_clip_upper(S*F*G, mu1_upper_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
-	caffe_gpu_clip_upper(S*F*G, mu2_upper_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
-
+        caffe_gpu_clip_upper(S*F*G, mu1_upper_limit, gauss_params_mu1, gauss_params_mu1, stream_id);
+        caffe_gpu_clip_upper(S*F*G, mu2_upper_limit, gauss_params_mu2, gauss_params_mu2, stream_id);
+    }
 
 	// 0. precompute  sigma^2, sigma^3 and (sigma^2)/2
 	conv_gauss_precompute_sigma_kernel<Dtype><<<CUDA_GET_BLOCKS(S*G*F), CUDA_NUM_THREADS, 0, stream_id>>>(S*G*F, gauss_params_sigma, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, this->sigma_lower_bound);
@@ -674,8 +676,8 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	clock_t end_t = clock();
 }
 
-template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id);
-template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, bool enable_unit_bounds_guard, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, bool enable_unit_bounds_guard, cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
 template void BaseDAUConvLayer<double>::set_last_n_gauss_to_zero(double* array, int num_gauss_zero);
 template void BaseDAUConvLayer<float>::set_last_n_gauss_to_zero(float* array, int num_gauss_zero);

@@ -126,6 +126,7 @@ class _DAUConvolution2d(object):
             num_dau_units_ignore=0,
             mu_learning_rate_factor=500,
             dau_unit_border_bound=0.01,
+            dau_unit_sigma_bound=0.01,
             unit_testing=False,
             name=None):
         self.num_output = num_output
@@ -136,6 +137,7 @@ class _DAUConvolution2d(object):
         self.max_kernel_size = max_kernel_size
         self.mu_learning_rate_factor = mu_learning_rate_factor
         self.dau_unit_border_bound = dau_unit_border_bound
+        self.dau_unit_sigma_bound = dau_unit_sigma_bound
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -167,9 +169,20 @@ class _DAUConvolution2d(object):
         if strides > 1:
             raise ValueError("Only strides=1 supported.")
 
+        self.mean_max_allowed_offset = np.floor(self.max_kernel_size/2.0) - self.dau_unit_border_bound
+
+
     # pylint: enable=redefined-builtin
 
     def __call__(self, inp, w, mu1, mu2, sigma):  # pylint: disable=redefined-builtin
+        # first ensure mu1, mu2 and sigma values are all within bounds by cliping them
+        mu1 = tf.clip_by_value(mu1, clip_value_min=-self.mean_max_allowed_offset, clip_value_max=self.mean_max_allowed_offset)
+        mu2 = tf.clip_by_value(mu2, clip_value_min=-self.mean_max_allowed_offset, clip_value_max=self.mean_max_allowed_offset)
+
+        # NOTE: we do not need to clip sigma since we do not learn it !!
+        if False:
+            sigma = tf.clip_by_value(sigma, clip_value_min=self.dau_unit_sigma_bound, clip_value_max=1000)
+
 
         # TODO: number_units should be infereed from W, but we need to fix to have size of W,mu1,mu2,sigma in [S, Gy, Gx, F] format
         settings = dict(num_output=self.num_output,
@@ -179,7 +192,7 @@ class _DAUConvolution2d(object):
                         kernel_size=self.max_kernel_size,
                         pad=self.padding,
                         component_border_bound=self.dau_unit_border_bound,
-                        sigma_lower_bound=0.01,
+                        sigma_lower_bound=self.dau_unit_sigma_bound,
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
                         unit_testing=self.unit_testing)
         return self.dau_conv_op(

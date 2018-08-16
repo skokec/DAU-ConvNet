@@ -266,6 +266,10 @@ public:
             // prevent display of allocation size on each call (except when doing unit testing)
             tf_layer.enable_memalloc_info(this->unit_testing == true ? true : false);
 
+            // we do not need to guard unit bounds since this is done in python
+            // NOTE: clipping should not be done here since inputs (mu1,mu2,sigma) are not mutable !!
+            tf_layer.enable_unit_bounds_guard(false);
+
             tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
             tf_layer.LayerSetUp(dau_conv_settings_, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
