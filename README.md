@@ -195,11 +195,14 @@ Current implementation is limited to using only the following settings:
  * `data_format = 'NCHW'`: only 'NCHW' format available in our C++/CUDA implementation
  * `stride = 1`: striding not implemented yet
  * `max_kernel_size <= 65`: due to pre-defined CUDA kernels max offsets are restricted to specific values:
-  * `max_kernel_size <= 9` and `max_kernel_size <= 17`: most optimal kernel implementations
-  * `max_kernel_size <= 33` and `max_kernel_size <= 65`: less optimial implementation that have additional computational penalty due to larger memory utilization
-  * NOTE: selection of which CUDA kernel is used is performed based on actual offset values at each call so even setting large kernel sizes can be fast if all offset values (in each layer) are smaller then 8 pixels.
+   * `max_kernel_size <= 9` and `max_kernel_size <= 17`: most optimal kernel implementations
+   * `max_kernel_size <= 33` and `max_kernel_size <= 65`: less optimal  implementation that have additional computational penalty due to larger memory utilization
+   * NOTE: selection of which CUDA kernel is used is performed based on actual offset values at each call so even setting large kernel sizes can be fast if all offset values (in each layer) are smaller than 8 pixels.
 
 ### Example of code usage ###
+
+CIFAR-10 example is available [here](https://github.com/skokec/DAU-ConvNet-cifar10-example).
+
 Example of three DAU convolutional layer and one fully connected using batch norm and L2 regularization on weights:
 
 ```python
@@ -243,7 +246,6 @@ with arg_scope([dau_conv2d, tf.contrib.layers.fully_connected],
                                                     activation_fn=None,
                                                     normalizer_fn=None,
                                                     biases_initializer=tf.constant_initializer(0))
-...
-```
 
+```
 
