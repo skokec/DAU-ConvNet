@@ -194,7 +194,10 @@ dau_conv.DAUGridMean(dau_units, # number of DAU units per image axis e.g. (2,2) 
 Current implementation is limited to using only the following settings:
  * `data_format = 'NCHW'`: only 'NCHW' format available in our C++/CUDA implementation
  * `stride = 1`: striding not implemented yet
- * `max_kernel_size <= 17`: due to pre-defined CUDA kernels max offsets are up to 8 pixels from center e.g. 17x17 kernel size (for even larger it would require minor adjustment in the code and longer compile time)
+ * `max_kernel_size <= 65`: due to pre-defined CUDA kernels max offsets are restricted to specific values:
+  * `max_kernel_size <= 9` and `max_kernel_size <= 17`: most optimal kernel implementations
+  * `max_kernel_size <= 33` and `max_kernel_size <= 65`: less optimial implementation that have additional computational penalty due to larger memory utilization
+  * NOTE: selection of which CUDA kernel is used is performed based on actual offset values at each call so even setting large kernel sizes can be fast if all offset values (in each layer) are smaller then 8 pixels.
 
 ### Example of code usage ###
 Example of three DAU convolutional layer and one fully connected using batch norm and L2 regularization on weights:
