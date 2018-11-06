@@ -5,7 +5,7 @@ import time
 import numpy as np
 import tensorflow as tf
 import scipy
-from dau_conv import DAUConv2d
+from dau_conv import DAUConv2d,DAUConv1d
 from dau_conv import ZeroNLast
 from dau_conv import DAUGridMean
 
@@ -65,7 +65,7 @@ class DAUConvPython:
         return y
 
 
-    def forward_cpu(self, x, w, mu1, mu2, sigma, num_dau_units_ignore=0):
+    def forward_cpu(self, x, w, mu1, mu2, sigma, num_dau_units_ignore=0, single_dim_kernel=False):
         N = x.shape[0]
         S = x.shape[1]
 
@@ -73,7 +73,7 @@ class DAUConvPython:
 
         x_blur = np.zeros(x.shape,dtype=np.float32)
 
-        filter,_,_,_,_ = self._get_filters(sigma_val)
+        filter,_,_,_,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel)
 
         # pre-blur the X
         for n in range(N):
@@ -164,13 +164,22 @@ class DAUConvPython:
                                                                   error[:,f,:,:])) * interpol_w
         return output
 
-    def _get_filters(self, sigma):
+    def _get_filters(self, sigma, single_dim_kernel=False):
         N = 9
 
         x = np.tile(np.arange(N),(N,1))-4
         y = x.T
 
         filter = np.exp(-1 * (x**2 + y**2) /(2*sigma**2))
+
+        # set values to zeros in second dimension if reqested only one dimension
+        if single_dim_kernel:
+            valid_filter = np.zeros_like(filter)
+
+            valid_filter[valid_filter.shape[0]/2,:] = 1
+
+            filter = filter * valid_filter
+
         deriv_w = filter
         deriv_mu1 = x / (sigma**2) * filter
         deriv_mu2 = y / (sigma**2) * filter
@@ -190,19 +199,20 @@ class DAUConvPython:
 
         return (filter, deriv_w, deriv_mu1, deriv_mu2, deriv_sigma)
 
-    def backward_cpu(self, x, error, w, mu1, mu2, sigma, num_dau_units_ignore=0, unit_testing=True):
+    def backward_cpu(self, x, error, w, mu1, mu2, sigma, num_dau_units_ignore=0, unit_testing=True, single_dim_kernel=False):
 
         # we get back-propagated error by rotating offsets i.e. we just use negatives of offsets
         backprop_error = self.forward_cpu(error,
                                            np.swapaxes(w, 1,3),
                                            np.swapaxes(-1 * mu1, 1,3),
-                                           np.swapaxes(-1 * mu2, 1,3), sigma)
+                                           np.swapaxes(-1 * mu2, 1,3), sigma, single_dim_kernel=single_dim_kernel)
         N = x.shape[0]
         F = x.shape[1]
 
         sigma_val = sigma[0]
 
-        filter,deriv_w, deriv_mu1,deriv_mu2,_ = self._get_filters(sigma_val)
+        filter,deriv_w, deriv_mu1,deriv_mu2,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel)
+
 
         # next we need to get gradients wrt w,mu1,mu2
         if True:
@@ -553,6 +563,87 @@ class DAUConvTest(unittest.TestCase):
 
                 t_end = time.time()
                 print(t_end-t_start)
+
+    def _run_DAUConv1d_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init):
+
+        for i in range(repeat):
+            mu_learning_rate_factor = 1000
+            input_channels = S
+            num_output = F
+            sigma = 0.5
+            x_rand = np.random.rand(N,input_channels,H,W)
+            #x_rand = np.ones((16,num_output,32,32),dtype=np.float32)
+
+            x = tf.placeholder(tf.float32, shape = x_rand.shape)
+
+            op = DAUConv1d(filters=num_output,
+                           dau_units=dau_uints,
+                           max_kernel_size=max_kernel_size,
+                           use_bias=False,
+                           weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
+                           mu1_initializer=tf.random_uniform_initializer(minval=-max_offset_init, maxval=max_offset_init,dtype=tf.float32),
+                           #weight_initializer=tf.constant_initializer(1,dtype=np.float32),
+                           #mu1_initializer=tf.constant_initializer(0,dtype=np.float32),
+                           sigma_initializer=tf.constant_initializer(sigma),
+                           mu_learning_rate_factor=mu_learning_rate_factor,
+                           unit_testing=True)
+
+            result = op(x)
+            #result_error = tf.ones([np.int32(x.shape[0]),num_output,
+            #                                 np.int32(x.shape[2]),
+            #                                 np.int32(x.shape[3])],dtype=tf.float32)
+            result_error = tf.random_normal([np.int32(x.shape[0]),num_output,
+                                             np.int32(x.shape[2]),
+                                             np.int32(x.shape[3])],dtype=tf.float32)
+
+            var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2], grad_ys=result_error)
+
+
+            init = tf.global_variables_initializer()
+
+            c = tf.ConfigProto(allow_soft_placement=True,
+                               log_device_placement=True)
+            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.allow_growth = True
+
+            with tf.Session(config=c) as s:
+
+                s.run(init)
+                t_start = time.time()
+
+                r, r_error, r_grad, w, mu1, mu2  = s.run([result, result_error, var_grad, op.dau_weights, op.dau_mu1, op.dau_mu2], feed_dict = {x: x_rand})
+
+                t_end = time.time()
+                print(t_end-t_start)
+
+            gt_fwd_vals = DAUConvPython().forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2, single_dim_kernel=True,
+                                                      sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore)
+
+            gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2, single_dim_kernel=True,
+                                                       sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore, unit_testing=True)
+
+            # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
+            r = r[:,:,:,:-2]
+            r_grad[0] = r_grad[0][:,:,:,:-2]
+            gt_fwd_vals = gt_fwd_vals[:,:,:,:-2]
+            gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:-2],
+                           gt_bwd_vals[1],
+                           gt_bwd_vals[2]* mu_learning_rate_factor,
+                           gt_bwd_vals[3]* mu_learning_rate_factor)
+
+            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=True)
+
+            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=True)
+            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=True)
+            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=True)
+            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
+
+    def test_DAUConv1d(self):
+
+        # test small kernels (9 and 17)
+        self._run_DAUConv1d_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv1d_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -43,6 +43,7 @@ REGISTER_OP("DAUConv")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false")
         .Attr("mu_learning_rate_factor: float = 1.0")
+        .Attr("single_dim_kernel: bool = false")
 .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
@@ -114,6 +115,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_iteration_step", &merge_iteration_step));
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
         OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
+        OP_REQUIRES_OK(context, context->GetAttr("single_dim_kernel", &this->single_dim_kernel));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -289,6 +291,9 @@ public:
             // used to clip offsets within this bound
             tf_layer.set_max_kernel_size(dau_conv_settings.kernel_size,dau_conv_settings.kernel_size);
 
+            // if single dimensional kernel is reqested then we need to disable blur in second dimension
+            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+
             tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
             //DAUConvNet::caffe_gpu_set<Dtype>(output->NumElements(), 1, top_data);
@@ -312,6 +317,7 @@ private:
     DAUConvNet::DAUConvSettings dau_conv_settings;
     bool unit_testing;
     int number_units_ignore;
+    bool single_dim_kernel;
 };
 
 #define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);

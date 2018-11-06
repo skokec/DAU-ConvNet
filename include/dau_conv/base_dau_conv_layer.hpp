@@ -77,7 +77,7 @@ public:
     }
 
     virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, bool enable_unit_bounds_guard,
-                             cublasHandle_t cublas_handle, cudaStream_t stream_id);
+                             bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
     virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
                          int kernel_h, int kernel_w) = 0;
@@ -167,7 +167,8 @@ public:
     explicit BaseDAUConvLayer(cublasHandle_t cublas_handle, bool ignore_edge_gradients = false, bool offsets_already_centered = true, bool dynamic_kernel_size = true)
             : cublas_handle(cublas_handle), handles_setup_(false), own_cuda_stream(true), enable_unit_bounds_guard_(true),
               ignore_edge_gradients_(ignore_edge_gradients), offsets_already_centered_(offsets_already_centered),
-              enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true), dynamic_kernel_size_(dynamic_kernel_size) {
+              enabled_fwd_op(true), enabled_bwd_op(true), enabled_memalloc_info(true), dynamic_kernel_size_(dynamic_kernel_size),
+              single_dimension_kernel(false) {
         this->aggregation.param = NULL;
         this->aggregation.kernels = NULL;
     }
@@ -199,6 +200,8 @@ public:
     void enable_memalloc_info(bool enable) {this->enabled_memalloc_info = enable; }
 
     void enable_unit_bounds_guard(bool enable)  { this->enable_unit_bounds_guard_ = enable; }
+
+    void set_single_dimensional_kernel(bool single_dim)  { this->single_dimension_kernel = single_dim; }
 
     void set_default_cuda_stream(cudaStream_t s) {
         // release internal stream first if we are the owners
@@ -298,6 +301,9 @@ protected:
     // (to optimize speed we can defined smaller kernel size if all offsets will fall within this bound)
     // NOTE: only works when this->offsets_already_centered_ == true
     int max_kernel_w_, max_kernel_h_;
+
+    // option to disable kernel_h_ for use with 1-dimensional data
+    bool single_dimension_kernel;
 
     int stride_h_, stride_w_;
     int pad_h_, pad_w_;

@@ -127,6 +127,7 @@ class _DAUConvolution2d(object):
             mu_learning_rate_factor=500,
             dau_unit_border_bound=0.01,
             dau_unit_sigma_bound=0.01,
+            dau_unit_single_dim=False,
             unit_testing=False,
             name=None):
         self.num_output = num_output
@@ -138,6 +139,7 @@ class _DAUConvolution2d(object):
         self.mu_learning_rate_factor = mu_learning_rate_factor
         self.dau_unit_border_bound = dau_unit_border_bound
         self.dau_unit_sigma_bound = dau_unit_sigma_bound
+        self.dau_unit_single_dim = dau_unit_single_dim
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -194,6 +196,7 @@ class _DAUConvolution2d(object):
                         component_border_bound=self.dau_unit_border_bound,
                         sigma_lower_bound=self.dau_unit_sigma_bound,
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
+                        single_dim_kernel=self.dau_unit_single_dim,
                         unit_testing=self.unit_testing)
         return self.dau_conv_op(
             input=inp,
@@ -235,6 +238,7 @@ class DAUConv2d(base.Layer):
                  trainable=True,
                  mu_learning_rate_factor=500,
                  dau_unit_border_bound=0.01,
+                 dau_unit_single_dim=False,
                  unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
@@ -288,6 +292,7 @@ class DAUConv2d(base.Layer):
         self.num_dau_units_all = np.int32(np.prod(self.dau_units))
         self.num_dau_units_ignore = 0
 
+        self.dau_unit_single_dim = dau_unit_single_dim
         # if we have less then 2 units per channel then or have odd number of them then add one more dummy unit
         # since computation is always done with 2 units at the same time (effectively set weight=0 for those dummy units)
 
@@ -433,6 +438,7 @@ class DAUConv2d(base.Layer):
             num_dau_units_ignore=self.num_dau_units_ignore,
             mu_learning_rate_factor=self.mu_learning_rate_factor,
             dau_unit_border_bound=self.dau_unit_border_bound,
+            dau_unit_single_dim=self.dau_unit_single_dim,
             unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
@@ -501,6 +507,22 @@ class DAUConv2d(base.Layer):
                 new_space.append(new_dim)
             return tensor_shape.TensorShape([input_shape[0], self.filters] +
                                             new_space)
+
+class DAUConv1d(DAUConv2d):
+    def __init__(self, filters,
+                 dau_units,
+                 max_kernel_size,
+                 **kwargs):
+        def mu_zero_constraint(w):
+            return tf.zeros_like(w)
+
+        super(DAUConv1d, self).__init__(filters, dau_units, max_kernel_size,
+                                        mu2_initializer=tf.zeros_initializer(),
+                                        mu2_regularizer=None,
+                                        mu2_constraint=mu_zero_constraint,
+                                        dau_unit_single_dim=True,
+                                        **kwargs)
+
 
 from tensorflow.contrib.framework.python.ops import add_arg_scope
 from tensorflow.python.ops import variable_scope
@@ -591,6 +613,98 @@ def dau_conv2d(inputs,
         layers_contrib._add_variable_to_collections(layer.dau_weights, variables_collections, 'weights')
         layers_contrib._add_variable_to_collections(layer.dau_mu1, variables_collections, 'mu1')
         layers_contrib._add_variable_to_collections(layer.dau_mu2, variables_collections, 'mu2')
+        layers_contrib._add_variable_to_collections(layer.dau_sigma, variables_collections, 'sigma')
+
+        if layer.use_bias:
+            layers_contrib._add_variable_to_collections(layer.bias, variables_collections, 'biases')
+
+        if normalizer_fn is not None:
+            normalizer_params = normalizer_params or {}
+            outputs = normalizer_fn(outputs, **normalizer_params)
+
+        if activation_fn is not None:
+            outputs = activation_fn(outputs)
+        return utils_contrib.collect_named_outputs(outputs_collections, sc.name, outputs)
+
+
+@add_arg_scope
+def dau_conv1d(inputs,
+               filters,
+               dau_units,
+               max_kernel_size,
+               stride=1,
+               mu_learning_rate_factor=500,
+               data_format=None,
+               activation_fn=nn.relu,
+               normalizer_fn=None,
+               normalizer_params=None,
+               weights_initializer=init_ops.random_normal_initializer(stddev=0.1), #init_ops.glorot_uniform_initializer(),
+               weights_regularizer=None,
+               mu1_initializer=None,
+               mu1_regularizer=None,
+               sigma_initializer=None,
+               sigma_regularizer=None,
+               biases_initializer=init_ops.zeros_initializer(),
+               biases_regularizer=None,
+               dau_unit_border_bound=0.01,
+               reuse=None,
+               variables_collections=None,
+               outputs_collections=None,
+               trainable=True,
+               scope=None):
+
+    if data_format not in [None, 'NCHW']:
+        raise ValueError('Invalid data_format: %r' % (data_format,))
+
+    layer_variable_getter = layers_contrib._build_variable_getter({
+        'bias': 'biases',
+        'weight': 'weights',
+        'mu1': 'mu1',
+        'sigma': 'sigma'
+    })
+
+    with variable_scope.variable_scope(
+            scope, 'DAUConv', [inputs], reuse=reuse,
+            custom_getter=layer_variable_getter) as sc:
+        inputs = ops.convert_to_tensor(inputs)
+        input_rank = inputs.get_shape().ndims
+
+        if input_rank != 4:
+            raise ValueError('DAU convolution not supported for input with rank',
+                             input_rank)
+
+        df = ('channels_first'
+              if data_format and data_format.startswith('NC') else 'channels_last')
+
+        layer = DAUConv1d(filters,
+                          dau_units,
+                          max_kernel_size,
+                          strides=stride,
+                          data_format=df,
+                          activation=None,
+                          use_bias=not normalizer_fn and biases_initializer,
+                          mu_learning_rate_factor=mu_learning_rate_factor,
+                          weight_initializer=weights_initializer,
+                          mu1_initializer=mu1_initializer,
+                          sigma_initializer=sigma_initializer,
+                          bias_initializer=biases_initializer,
+                          weight_regularizer=weights_regularizer,
+                          mu1_regularizer=mu1_regularizer,
+                          sigma_regularizer=sigma_regularizer,
+                          bias_regularizer=biases_regularizer,
+                          activity_regularizer=None,
+                          dau_unit_border_bound=dau_unit_border_bound,
+                          trainable=trainable,
+                          unit_testing=False,
+                          name=sc.name,
+                          _scope=sc,
+                          _reuse=reuse)
+
+        outputs = layer.apply(inputs)
+
+        # Add variables to collections.
+        layers_contrib._add_variable_to_collections(layer.dau_weights, variables_collections, 'weights')
+        layers_contrib._add_variable_to_collections(layer.dau_mu1, variables_collections, 'mu1')
         layers_contrib._add_variable_to_collections(layer.dau_sigma, variables_collections, 'sigma')
 
         if layer.use_bias:

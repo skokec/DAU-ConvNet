@@ -43,7 +43,8 @@ REGISTER_OP("DAUConvGrad")
         .Attr("merge_iteration_step: int = 0")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false")
-        .Attr("mu_learning_rate_factor: float = 1.0");
+        .Attr("mu_learning_rate_factor: float = 1.0")
+        .Attr("single_dim_kernel: bool = false");
 //TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
 template<typename Device, typename Dtype>
 class DAUConvGradOp : public OpKernel {
@@ -81,6 +82,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
         OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
         OP_REQUIRES_OK(context, context->GetAttr("mu_learning_rate_factor", &this->mu_learning_rate_factor));
+        OP_REQUIRES_OK(context, context->GetAttr("single_dim_kernel", &this->single_dim_kernel));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -270,8 +272,11 @@ public:
 
             Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
 
+            // if single dimensional kernel is reqested then we need to disable blur in second dimension
+            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+
             tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
-                                  {true, true, true, false, false});
+                                  {true, true, this->single_dim_kernel == false ? true : false, false, false});
 
             // multiply mu with learning rate if needed
             if (mu_learning_rate_factor != 1.0) {
@@ -302,6 +307,7 @@ private:
     bool unit_testing;
     float mu_learning_rate_factor;
     int number_units_ignore;
+    bool single_dim_kernel;
 };
 
 REGISTER_KERNEL_BUILDER(Name("DAUConvGrad").Device(DEVICE_GPU), DAUConvGradOp<GPUDevice, float>);

@@ -501,10 +501,34 @@ __global__ void mirror_kernel(const int S, const int F, const int n, const Dtype
 	}
 }
 
+template <typename Dtype>
+void dau_gpu_convert2dto1d(const int I, const int H, const int W, const Dtype* X, Dtype* Y,
+						   cudaStream_t streamId = 0);
 
 template <typename Dtype>
+__global__ void convert2dto1d_kernel(const int N, const int H, const int W, const Dtype* x, Dtype* y) {
+	CUDA_KERNEL_LOOP(index, N*H*W) {
+		int w = (index % W) ;
+		int nh = index / W;
+		int h = (nh % H);
+		int n = nh / H;
+
+		y[index] = h == (H-1)/2 ? x[index] : 0;
+	}
+}
+
+
+template <typename Dtype>
+void dau_gpu_convert2dto1d(const int I, const int H, const int W, const Dtype* X, Dtype* Y, cudaStream_t streamId) {
+	convert2dto1d_kernel<Dtype><<<CUDA_GET_BLOCKS(I*H*W), CUDA_NUM_THREADS, 0, streamId>>>(I, H, W, X, Y);
+}
+
+template void dau_gpu_convert2dto1d(const int I, const int H, const int W, const float* X, float* Y, cudaStream_t streamId);
+template void dau_gpu_convert2dto1d(const int I, const int H, const int W, const double* X, double* Y, cudaStream_t streamId);
+
+	template <typename Dtype>
 void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, bool enable_unit_bounds_guard,
-                                              cublasHandle_t cublas_handle, cudaStream_t stream_id) {
+											  bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id) {
 
 	// we get mutable ptr but we do not modify it, this is just poor code in part of the CUB code
 	int* tmp_precomp_index_gpu = this->precomp_index();
@@ -569,6 +593,18 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	Dtype* deriv_sigma = output.d_params() + 3 * d_param_size;
 
 	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S*G*F, K_w, K_h, this->offsets_already_centered, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
+
+	// set values in second dimension to zero if requested to use only 1-dimensional kernel
+	if (single_dimension_kernel) {
+		std::cout << "disabling 2th dimension in kernels" << std::endl;
+
+		// [SxGxF] x [K_h x K_w]
+		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, gauss_dist, gauss_dist);
+		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_weight, deriv_weight);
+		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_mu1, deriv_mu1);
+		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_mu2, deriv_mu2);
+		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_sigma, deriv_sigma);
+	}
 
 	// 2. for each filter (G, dG/dx, dG/dy, dG/dsigma) calculate sums (use different sums if using normalization by square sum)
 	Dtype* guass_norm = this->param_temp(GAUSS_NORM);
@@ -673,11 +709,14 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 
 	//cudaDeviceSynchronize();
 
+
 	clock_t end_t = clock();
 }
 
-template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, bool enable_unit_bounds_guard, cublasHandle_t cublas_handle, cudaStream_t stream_id);
-template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, bool enable_unit_bounds_guard, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, bool enable_unit_bounds_guard,
+													   bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, bool enable_unit_bounds_guard,
+														bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
 template void BaseDAUConvLayer<double>::set_last_n_gauss_to_zero(double* array, int num_gauss_zero);
 template void BaseDAUConvLayer<float>::set_last_n_gauss_to_zero(float* array, int num_gauss_zero);

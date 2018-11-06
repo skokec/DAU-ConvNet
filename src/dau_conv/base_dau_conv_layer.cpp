@@ -422,7 +422,7 @@ bool BaseDAUConvLayer<Dtype>::update_prefiltering_kernels(cudaStream_t stream) {
         // component i.e., num_in_channels = 1, num_out_channels = 1, num_gauss = 1, and we use weight=1, mu = [0,0]
 
         this->kernel_compute->get_kernels(*this->aggregation.param, *this->aggregation.kernels, this->enable_unit_bounds_guard_,
-                                          cublas_handle, stream);
+                                          this->single_dimension_kernel, cublas_handle, stream);
 
         this->aggregation.current_sigma = sigma;
 
