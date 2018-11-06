@@ -361,6 +361,8 @@ class DAUConvTest(unittest.TestCase):
         self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
         self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6)
 
+        self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=6, H=6, S=64, F=256, dau_uints=(2,1), max_kernel_size=17, max_offset_init=8)
+
         # test with dynamic kernel size optimization (using smaller kernel dispite large allowed kernel)
         self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3)
 
@@ -506,8 +508,8 @@ class DAUConvTest(unittest.TestCase):
     def test_DAUConvMemtest(self):
 
         N = 32
-        W = 13
-        H = 13
+        W = 6
+        H = 6
         input_channels = 128
         num_output = 256
         sigma = 0.5
@@ -520,9 +522,10 @@ class DAUConvTest(unittest.TestCase):
                        max_kernel_size=9,
                        use_bias=False,
                        weight_initializer=tf.random_normal_initializer(stddev=0.1, dtype=np.float32),
-                       mu1_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
-                       mu2_initializer=tf.random_uniform_initializer(minval=-3, maxval=3,dtype=tf.float32),
+                       mu1_initializer=tf.random_uniform_initializer(minval=-10, maxval=10,dtype=tf.float32),
+                       mu2_initializer=tf.random_uniform_initializer(minval=-10, maxval=10,dtype=tf.float32),
                        sigma_initializer=tf.constant_initializer(sigma),
+                       dau_unit_border_bound=0.1,
                        unit_testing=False)
 
         result = op(x)
