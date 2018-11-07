@@ -50,7 +50,7 @@ We provide TensorFlow plugin and appropriate Python wrappers that can be used to
 ## Additional requirements and dependency libraries for TensorFlow plugin ##
  * Requirements for DAU-ConvNet library (see above)
  * Python (tested on Python2.7 and Python3.5)
- * TensorFlow 1.5 or newer
+ * TensorFlow 1.6 or newer
  * Numpy
  * (optional) Scipy, matplotlib and python-tk  for running unit test in `dau_conv_test.py`
  
@@ -63,7 +63,7 @@ On Ubuntu 16.04 with pre-installed CUDA and cuBLAS (e.g. using nvidia/cuda:9.0-c
 apt-get update
 apt-get install cmake python python-pip libopenblas-dev
  
-pip install tensorflow>=1.5 tensorflow-gpu>=1.5
+pip install tensorflow>=1.6 tensorflow-gpu>=1.6
 ```
 
 Then clone the repository and build from source:
