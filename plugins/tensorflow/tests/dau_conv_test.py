@@ -641,7 +641,7 @@ class DAUConvTest(unittest.TestCase):
     def test_DAUConv1d(self):
 
         # test small kernels (9 and 17)
-        self._run_DAUConv1d_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv1d_forward_and_backward(repeat=5, N=4, W=32, H=8, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
         self._run_DAUConv1d_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6)
 
 

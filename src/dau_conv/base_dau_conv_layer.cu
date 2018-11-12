@@ -596,8 +596,6 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 
 	// set values in second dimension to zero if requested to use only 1-dimensional kernel
 	if (single_dimension_kernel) {
-		std::cout << "disabling 2th dimension in kernels" << std::endl;
-
 		// [SxGxF] x [K_h x K_w]
 		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, gauss_dist, gauss_dist);
 		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_weight, deriv_weight);
