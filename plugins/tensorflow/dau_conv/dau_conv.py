@@ -365,60 +365,79 @@ class DAUConv2d(base.Layer):
 
         return dau_params_shape
 
+    def add_dau_weights_var(self, input_shape):
+        dau_params_shape = self.get_dau_variable_shape(input_shape)
+        return self.add_variable(name='weights',
+                                 shape=dau_params_shape,
+                                 initializer=self.weight_initializer,
+                                 regularizer=self.weight_regularizer,
+                                 constraint=self.weight_constraint,
+                                 trainable=True,
+                                 dtype=self.dtype)
+
+    def add_dau_mu1_var(self, input_shape):
+        dau_params_shape = self.get_dau_variable_shape(input_shape)
+        return self.add_variable(name='mu1',
+                                 shape=dau_params_shape,
+                                 initializer=self.mu1_initializer,
+                                 regularizer=self.mu1_regularizer,
+                                 constraint=self.mu1_constraint,
+                                 trainable=True,
+                                 dtype=self.dtype)
+
+
+    def add_dau_mu2_var(self, input_shape):
+        dau_params_shape = self.get_dau_variable_shape(input_shape)
+        return self.add_variable(name='mu2',
+                                   shape=dau_params_shape,
+                                   initializer=self.mu2_initializer,
+                                   regularizer=self.mu2_regularizer,
+                                   constraint=self.mu2_constraint,
+                                   trainable=True,
+                                   dtype=self.dtype)
+    def add_dau_sigma_var(self, input_shape):
+        dau_params_shape = self.get_dau_variable_shape(input_shape)
+        return self.add_variable(name='sigma',
+                                 shape=dau_params_shape,
+                                 initializer=self.sigma_initializer,
+                                 regularizer=self.sigma_regularizer,
+                                 constraint=self.sigma_constraint,
+                                 trainable=False,
+                                 dtype=self.dtype)
+
+    def add_bias_var(self):
+        return self.add_variable(name='bias',
+                                 shape=(self.filters,),
+                                 initializer=self.bias_initializer,
+                                 regularizer=self.bias_regularizer,
+                                 constraint=self.bias_constraint,
+                                 trainable=True,
+                                 dtype=self.dtype)
+
     def build(self, input_shape):
         input_shape = tensor_shape.TensorShape(input_shape)
 
         dau_params_shape = self.get_dau_variable_shape(input_shape)
         if self.dau_weights is None:
-            self.dau_weights = self.add_variable(name='weights',
-                                                 shape=dau_params_shape,
-                                                 initializer=self.weight_initializer,
-                                                 regularizer=self.weight_regularizer,
-                                                 constraint=self.weight_constraint,
-                                                 trainable=True,
-                                                 dtype=self.dtype)
-        elif np.any(self.dau_weights != dau_params_shape):
+            self.dau_weights = self.add_dau_weights_var(input_shape)
+        elif np.any(self.dau_weights.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_weights`')
         if self.dau_mu1 is None:
-            self.dau_mu1 = self.add_variable(name='mu1',
-                                                 shape=dau_params_shape,
-                                                 initializer=self.mu1_initializer,
-                                                 regularizer=self.mu1_regularizer,
-                                                 constraint=self.mu1_constraint,
-                                                 trainable=True,
-                                                 dtype=self.dtype)
-        elif np.any(self.dau_mu1 != dau_params_shape):
+            self.dau_mu1 = self.add_dau_mu1_var(input_shape)
+        elif np.any(self.dau_mu1.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_mu1`')
 
         if self.dau_mu2 is None:
-            self.dau_mu2 = self.add_variable(name='mu2',
-                                                 shape=dau_params_shape,
-                                                 initializer=self.mu2_initializer,
-                                                 regularizer=self.mu2_regularizer,
-                                                 constraint=self.mu2_constraint,
-                                                 trainable=True,
-                                                 dtype=self.dtype)
-        elif np.any(self.dau_mu2 != dau_params_shape):
+            self.dau_mu2 = self.add_dau_mu2_var(input_shape)
+        elif np.any(self.dau_mu2.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_mu2`')
         if self.dau_sigma is None:
-            self.dau_sigma = self.add_variable(name='sigma',
-                                                 shape=dau_params_shape,
-                                                 initializer=self.sigma_initializer,
-                                                 regularizer=self.sigma_regularizer,
-                                                 constraint=self.sigma_constraint,
-                                                 trainable=False,
-                                                 dtype=self.dtype)
-        elif np.any(self.dau_sigma != dau_params_shape):
+            self.dau_sigma = self.add_dau_sigma_var(input_shape)
+        elif np.any(self.dau_sigma.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_sigma`')
 
         if self.use_bias:
-            self.bias = self.add_variable(name='bias',
-                                          shape=(self.filters,),
-                                          initializer=self.bias_initializer,
-                                          regularizer=self.bias_regularizer,
-                                          constraint=self.bias_constraint,
-                                          trainable=True,
-                                          dtype=self.dtype)
+            self.bias = self.add_bias_var()
         else:
             self.bias = None
 
@@ -660,7 +679,6 @@ def dau_conv1d(inputs,
                sigma_constraint=None,
                biases_initializer=init_ops.zeros_initializer(),
                biases_regularizer=None,
-               biases_constraint=None,
                dau_unit_border_bound=0.01,
                reuse=None,
                variables_collections=None,
@@ -707,10 +725,6 @@ def dau_conv1d(inputs,
                           mu1_regularizer=mu1_regularizer,
                           sigma_regularizer=sigma_regularizer,
                           bias_regularizer=biases_regularizer,
-                          weight_constraint=weights_constraint,
-                          mu1_constraint=mu1_constraint,
-                          sigma_constraint=sigma_constraint,
-                          bias_constraint=biases_constraint,
                           activity_regularizer=None,
                           dau_unit_border_bound=dau_unit_border_bound,
                           trainable=trainable,
@@ -718,6 +732,12 @@ def dau_conv1d(inputs,
                           name=sc.name,
                           _scope=sc,
                           _reuse=reuse)
+
+        dau_weights = weights_constraint(layer.add_dau_weights_var(inputs.shape)) if  weights_constraint is not None else None
+        dau_mu1 = mu1_constraint(layer.add_dau_mu1_var(inputs.shape)) if  mu1_constraint is not None else None
+        dau_sigma = sigma_constraint(layer.add_dau_sigma_var(inputs.shape)) if  sigma_constraint is not None else None
+
+        layer.set_dau_variables_manually(dau_weights, dau_mu1, None, dau_sigma)
 
         outputs = layer.apply(inputs)
 
