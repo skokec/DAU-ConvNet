@@ -68,16 +68,21 @@ public:
                bool use_gmm_square_gauss_normalization,
                Dtype gmm_sigma_lower_bound,
                Dtype gmm_component_border_bound,
-               bool offsets_already_centered) {
+               bool offsets_already_centered,
+               bool single_dimension_kernel,
+               bool forbid_positive_dim1) {
         this->use_unit_normalization = use_gmm_gauss_normalization;
         this->use_square_unit_normalization = use_gmm_square_gauss_normalization;
         this->sigma_lower_bound = gmm_sigma_lower_bound;
         this->component_border_bound = gmm_component_border_bound;
         this->offsets_already_centered = offsets_already_centered;
+        this->single_dimension_kernel = single_dimension_kernel;
+        this->forbid_positive_dim1 = forbid_positive_dim1;
+
     }
 
     virtual void get_kernels(BaseDAUKernelParams<Dtype> &input, BaseDAUKernelOutput<Dtype> &output, bool enable_unit_bounds_guard,
-                             bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+                             cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
     virtual void reshape(int num_in_channels, int num_out_channels, int num_gauss,
                          int kernel_h, int kernel_w) = 0;
@@ -95,6 +100,9 @@ protected:
     Dtype component_border_bound;
 
     bool offsets_already_centered;
+
+    bool single_dimension_kernel;
+    bool forbid_positive_dim1;
 };
 
 struct DAUConvSettings {
@@ -202,6 +210,7 @@ public:
     void enable_unit_bounds_guard(bool enable)  { this->enable_unit_bounds_guard_ = enable; }
 
     void set_single_dimensional_kernel(bool single_dim)  { this->single_dimension_kernel = single_dim; }
+    void set_forbid_positive_dim1(bool forbid_positive_dim1)  { this->forbid_positive_dim1 = forbid_positive_dim1; }
 
     void set_default_cuda_stream(cudaStream_t s) {
         // release internal stream first if we are the owners
@@ -304,6 +313,7 @@ protected:
 
     // option to disable kernel_h_ for use with 1-dimensional data
     bool single_dimension_kernel;
+    bool forbid_positive_dim1;
 
     int stride_h_, stride_w_;
     int pad_h_, pad_w_;

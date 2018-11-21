@@ -400,7 +400,7 @@ __global__ void conv_gauss_precompute_sigma_kernel(const int n, Dtype* buf_sigma
 }
 
 template <typename Dtype>
-__global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int k_h, bool offsets_already_centered,
+__global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int k_h, bool offsets_already_centered, bool single_dim_only, bool forbid_positive_dim1,
 												const Dtype* W, const Dtype* MU1, const Dtype* MU2, const Dtype* SIGMA_2_INV, const Dtype* SIGMA_3_INV, const Dtype* SIGMA_2_INV_HALF,
 												Dtype* guass_dist, Dtype* guass_deriv_mu1, Dtype* guass_deriv_mu2, Dtype* guass_deriv_sigma) {
 
@@ -427,7 +427,15 @@ __global__ void conv_gauss_distributions_kernel(const int N, const int k_w, int 
 		const Dtype dist_y_2 = dist_y*dist_y;
 
 		const Dtype dist = dist_x_2 + dist_y_2;
-		const Dtype gauss_value = exp( -dist * sigma_square_inv_half);
+		Dtype gauss_value = exp( -dist * sigma_square_inv_half);
+
+        // set values in second dimension to zero if requested to use only 1-dimensional kernel
+        if (single_dim_only == true && dist_y != 0)
+            gauss_value = 0;
+
+        // set values for positive position in first dimension to zero if requested to forbid_positive_dim1
+        if (forbid_positive_dim1 == true && (dist_x > 0))
+            gauss_value = 0;
 
 		const int ptr_offset =  n * filter_size + y * k_w + x;
 
@@ -528,7 +536,7 @@ template void dau_gpu_convert2dto1d(const int I, const int H, const int W, const
 
 	template <typename Dtype>
 void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input, BaseDAUKernelOutput<Dtype>& output, bool enable_unit_bounds_guard,
-											  bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id) {
+											  cublasHandle_t cublas_handle, cudaStream_t stream_id) {
 
 	// we get mutable ptr but we do not modify it, this is just poor code in part of the CUB code
 	int* tmp_precomp_index_gpu = this->precomp_index();
@@ -592,17 +600,7 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 	Dtype* deriv_mu2 = output.d_params() + 2 * d_param_size;
 	Dtype* deriv_sigma = output.d_params() + 3 * d_param_size;
 
-	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S*G*F, K_w, K_h, this->offsets_already_centered, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
-
-	// set values in second dimension to zero if requested to use only 1-dimensional kernel
-	if (single_dimension_kernel) {
-		// [SxGxF] x [K_h x K_w]
-		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, gauss_dist, gauss_dist);
-		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_weight, deriv_weight);
-		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_mu1, deriv_mu1);
-		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_mu2, deriv_mu2);
-		dau_gpu_convert2dto1d(S*G*F, K_h, K_w, deriv_sigma, deriv_sigma);
-	}
+	conv_gauss_distributions_kernel<Dtype><<<numBlocks,threadsPerBlock, 0, stream_id>>>(S*G*F, K_w, K_h, this->offsets_already_centered, this->single_dimension_kernel, this->forbid_positive_dim1, gauss_params_w, gauss_params_mu1, gauss_params_mu2, gauss_params_sigma_square_inv, gauss_params_sigma_cube_inv, gauss_params_sigma_square_inv_half, gauss_dist, deriv_mu1, deriv_mu2, deriv_sigma);
 
 	// 2. for each filter (G, dG/dx, dG/dy, dG/dsigma) calculate sums (use different sums if using normalization by square sum)
 	Dtype* guass_norm = this->param_temp(GAUSS_NORM);
@@ -712,9 +710,9 @@ void BaseDAUKernelCompute<Dtype>::get_kernels(BaseDAUKernelParams<Dtype>& input,
 }
 
 template void BaseDAUKernelCompute<float>::get_kernels(BaseDAUKernelParams<float>& input, BaseDAUKernelOutput<float>& output, bool enable_unit_bounds_guard,
-													   bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+													   cublasHandle_t cublas_handle, cudaStream_t stream_id);
 template void BaseDAUKernelCompute<double>::get_kernels(BaseDAUKernelParams<double>& input, BaseDAUKernelOutput<double>& output, bool enable_unit_bounds_guard,
-														bool single_dimension_kernel, cublasHandle_t cublas_handle, cudaStream_t stream_id);
+														cublasHandle_t cublas_handle, cudaStream_t stream_id);
 
 template void BaseDAUConvLayer<double>::set_last_n_gauss_to_zero(double* array, int num_gauss_zero);
 template void BaseDAUConvLayer<float>::set_last_n_gauss_to_zero(float* array, int num_gauss_zero);

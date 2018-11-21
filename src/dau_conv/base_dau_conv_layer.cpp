@@ -121,7 +121,9 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     this->kernel_compute->setup(this->use_unit_normalization,
                                 this->use_square_unit_normalization,
                                 this->unit_sigma_lower_bound,0, // unit_border_bound = 0 (do not need border bound for this implementation)
-                                this->offsets_already_centered_);
+                                this->offsets_already_centered_,
+                                this->single_dimension_kernel,
+                                this->forbid_positive_dim1);
 
     // setup default bottom/top dimensions to zero
     this->bottom_dim_ = 0;
@@ -422,7 +424,7 @@ bool BaseDAUConvLayer<Dtype>::update_prefiltering_kernels(cudaStream_t stream) {
         // component i.e., num_in_channels = 1, num_out_channels = 1, num_gauss = 1, and we use weight=1, mu = [0,0]
 
         this->kernel_compute->get_kernels(*this->aggregation.param, *this->aggregation.kernels, this->enable_unit_bounds_guard_,
-                                          this->single_dimension_kernel, cublas_handle, stream);
+                                          cublas_handle, stream);
 
         this->aggregation.current_sigma = sigma;
 

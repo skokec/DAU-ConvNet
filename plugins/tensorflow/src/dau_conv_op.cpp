@@ -44,6 +44,7 @@ REGISTER_OP("DAUConv")
         .Attr("unit_testing: bool = false")
         .Attr("mu_learning_rate_factor: float = 1.0")
         .Attr("single_dim_kernel: bool = false")
+        .Attr("forbid_positive_dim1: bool = false")
 .SetShapeFn([](::tensorflow::shape_inference::InferenceContext* c) {
   shape_inference::ShapeHandle input_shape;
   TF_RETURN_IF_ERROR(c->WithRank(c->input(0), 4, &input_shape));
@@ -116,6 +117,8 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("merge_threshold", &merge_threshold));
         OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
         OP_REQUIRES_OK(context, context->GetAttr("single_dim_kernel", &this->single_dim_kernel));
+        OP_REQUIRES_OK(context, context->GetAttr("forbid_positive_dim1", &this->forbid_positive_dim1));
+
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -272,6 +275,10 @@ public:
             // NOTE: clipping should not be done here since inputs (mu1,mu2,sigma) are not mutable !!
             tf_layer.enable_unit_bounds_guard(false);
 
+            // if single dimensional kernel is reqested then we need to disable blur in second dimension
+            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+            tf_layer.set_forbid_positive_dim1(this->forbid_positive_dim1);
+
             tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor*) weights,(Tensor*) mu1,(Tensor*) mu2,(Tensor*) sigma);
 
             tf_layer.LayerSetUp(dau_conv_settings_, param_initializer, &dau_kernel_compute, &dau_kernel_params, &dau_kernel_output, bottom_shape, number_units_ignore, in_train);
@@ -291,8 +298,8 @@ public:
             // used to clip offsets within this bound
             tf_layer.set_max_kernel_size(dau_conv_settings.kernel_size,dau_conv_settings.kernel_size);
 
-            // if single dimensional kernel is reqested then we need to disable blur in second dimension
-            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+
+
 
             tf_layer.Forward_gpu(bottom_data, bottom_shape, top_data, top_shape);
 
@@ -318,6 +325,7 @@ private:
     bool unit_testing;
     int number_units_ignore;
     bool single_dim_kernel;
+    bool forbid_positive_dim1;
 };
 
 #define REGISTER_CPU(T) REGISTER_KERNEL_BUILDER(Name("BaseOp").Device(DEVICE_CPU), BaseOpOp<CPUDevice, T>);

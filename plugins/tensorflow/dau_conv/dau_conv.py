@@ -128,6 +128,7 @@ class _DAUConvolution2d(object):
             dau_unit_border_bound=0.01,
             dau_unit_sigma_bound=0.01,
             dau_unit_single_dim=False,
+            dau_aggregation_forbid_positive_dim1=False,
             unit_testing=False,
             name=None):
         self.num_output = num_output
@@ -140,6 +141,7 @@ class _DAUConvolution2d(object):
         self.dau_unit_border_bound = dau_unit_border_bound
         self.dau_unit_sigma_bound = dau_unit_sigma_bound
         self.dau_unit_single_dim = dau_unit_single_dim
+        self.dau_aggregation_forbid_positive_dim1 = dau_aggregation_forbid_positive_dim1
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -197,6 +199,7 @@ class _DAUConvolution2d(object):
                         sigma_lower_bound=self.dau_unit_sigma_bound,
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
                         single_dim_kernel=self.dau_unit_single_dim,
+                        forbid_positive_dim1=self.dau_aggregation_forbid_positive_dim1,
                         unit_testing=self.unit_testing)
         return self.dau_conv_op(
             input=inp,
@@ -239,6 +242,7 @@ class DAUConv2d(base.Layer):
                  mu_learning_rate_factor=500,
                  dau_unit_border_bound=0.01,
                  dau_unit_single_dim=False,
+                 dau_aggregation_forbid_positive_dim1=False,
                  unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
@@ -293,6 +297,7 @@ class DAUConv2d(base.Layer):
         self.num_dau_units_ignore = 0
 
         self.dau_unit_single_dim = dau_unit_single_dim
+        self.dau_aggregation_forbid_positive_dim1=dau_aggregation_forbid_positive_dim1
         # if we have less then 2 units per channel then or have odd number of them then add one more dummy unit
         # since computation is always done with 2 units at the same time (effectively set weight=0 for those dummy units)
 
@@ -458,6 +463,7 @@ class DAUConv2d(base.Layer):
             mu_learning_rate_factor=self.mu_learning_rate_factor,
             dau_unit_border_bound=self.dau_unit_border_bound,
             dau_unit_single_dim=self.dau_unit_single_dim,
+            dau_aggregation_forbid_positive_dim1=self.dau_aggregation_forbid_positive_dim1,
             unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
@@ -680,6 +686,7 @@ def dau_conv1d(inputs,
                biases_initializer=init_ops.zeros_initializer(),
                biases_regularizer=None,
                dau_unit_border_bound=0.01,
+               dau_aggregation_forbid_positive_dim1=False,
                reuse=None,
                variables_collections=None,
                outputs_collections=None,
@@ -727,6 +734,7 @@ def dau_conv1d(inputs,
                           bias_regularizer=biases_regularizer,
                           activity_regularizer=None,
                           dau_unit_border_bound=dau_unit_border_bound,
+                          dau_aggregation_forbid_positive_dim1=dau_aggregation_forbid_positive_dim1,
                           trainable=trainable,
                           unit_testing=False,
                           name=sc.name,

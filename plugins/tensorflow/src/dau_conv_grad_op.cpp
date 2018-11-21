@@ -44,7 +44,8 @@ REGISTER_OP("DAUConvGrad")
         .Attr("merge_threshold: int = 1")
         .Attr("unit_testing: bool = false")
         .Attr("mu_learning_rate_factor: float = 1.0")
-        .Attr("single_dim_kernel: bool = false");
+        .Attr("single_dim_kernel: bool = false")
+        .Attr("forbid_positive_dim1: bool = false");
 //TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
 template<typename Device, typename Dtype>
 class DAUConvGradOp : public OpKernel {
@@ -83,6 +84,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("unit_testing", &this->unit_testing));
         OP_REQUIRES_OK(context, context->GetAttr("mu_learning_rate_factor", &this->mu_learning_rate_factor));
         OP_REQUIRES_OK(context, context->GetAttr("single_dim_kernel", &this->single_dim_kernel));
+        OP_REQUIRES_OK(context, context->GetAttr("forbid_positive_dim1", &this->forbid_positive_dim1));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -255,6 +257,10 @@ public:
             // NOTE: clipping should not be done here since inputs (mu1,mu2,sigma) are not mutable !!
             tf_layer.enable_unit_bounds_guard(false);
 
+            // if single dimensional kernel is reqested then we need to disable blur in second dimension
+            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+            tf_layer.set_forbid_positive_dim1(this->forbid_positive_dim1);
+
             tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                          (Tensor *) sigma);
 
@@ -272,8 +278,7 @@ public:
 
             Dtype *bottom_error = TENSOR_DATA_PTR(grad_input,Dtype);
 
-            // if single dimensional kernel is reqested then we need to disable blur in second dimension
-            tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
+
 
             tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
                                   {true, true, this->single_dim_kernel == false ? true : false, false, false});
@@ -308,6 +313,7 @@ private:
     float mu_learning_rate_factor;
     int number_units_ignore;
     bool single_dim_kernel;
+    bool forbid_positive_dim1;
 };
 
 REGISTER_KERNEL_BUILDER(Name("DAUConvGrad").Device(DEVICE_GPU), DAUConvGradOp<GPUDevice, float>);

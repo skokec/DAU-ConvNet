@@ -65,7 +65,7 @@ class DAUConvPython:
         return y
 
 
-    def forward_cpu(self, x, w, mu1, mu2, sigma, num_dau_units_ignore=0, single_dim_kernel=False):
+    def forward_cpu(self, x, w, mu1, mu2, sigma, num_dau_units_ignore=0, do_error_backprop=False, single_dim_kernel=False, aggr_forbid_positive=False):
         N = x.shape[0]
         S = x.shape[1]
 
@@ -73,7 +73,10 @@ class DAUConvPython:
 
         x_blur = np.zeros(x.shape,dtype=np.float32)
 
-        filter,_,_,_,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel)
+        filter,_,_,_,_,error = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel, aggr_forbid_positive=aggr_forbid_positive)
+
+        if do_error_backprop:
+            filter = error
 
         # pre-blur the X
         for n in range(N):
@@ -164,7 +167,7 @@ class DAUConvPython:
                                                                   error[:,f,:,:])) * interpol_w
         return output
 
-    def _get_filters(self, sigma, single_dim_kernel=False):
+    def _get_filters(self, sigma, single_dim_kernel=False, aggr_forbid_positive=False):
         N = 9
 
         x = np.tile(np.arange(N),(N,1))-4
@@ -179,6 +182,14 @@ class DAUConvPython:
             valid_filter[valid_filter.shape[0]/2,:] = 1
 
             filter = filter * valid_filter
+
+        if aggr_forbid_positive:
+            valid_filter = np.zeros_like(filter)
+
+            valid_filter[:,:valid_filter.shape[1]/2+1] = 1
+
+            filter = filter * valid_filter
+
 
         deriv_w = filter
         deriv_mu1 = x / (sigma**2) * filter
@@ -197,21 +208,27 @@ class DAUConvPython:
         deriv_mu2 = deriv_mu2 / sum_filter - deriv_w *  sum_mu2
         deriv_sigma = deriv_sigma / sum_filter - deriv_w * sum_sigma
 
-        return (filter, deriv_w, deriv_mu1, deriv_mu2, deriv_sigma)
+        deriv_error =  np.flip(np.flip(filter,axis=0),axis=1)
 
-    def backward_cpu(self, x, error, w, mu1, mu2, sigma, num_dau_units_ignore=0, unit_testing=True, single_dim_kernel=False):
+        return (filter, deriv_w, deriv_mu1, deriv_mu2, deriv_sigma, deriv_error)
+
+    def backward_cpu(self, x, error, w, mu1, mu2, sigma, num_dau_units_ignore=0, unit_testing=True,
+                     single_dim_kernel=False, aggr_forbid_positive=False):
 
         # we get back-propagated error by rotating offsets i.e. we just use negatives of offsets
         backprop_error = self.forward_cpu(error,
-                                           np.swapaxes(w, 1,3),
-                                           np.swapaxes(-1 * mu1, 1,3),
-                                           np.swapaxes(-1 * mu2, 1,3), sigma, single_dim_kernel=single_dim_kernel)
+                                          np.swapaxes(w, 1,3),
+                                          np.swapaxes(-1 * mu1, 1,3),
+                                          np.swapaxes(-1 * mu2, 1,3), sigma, do_error_backprop=True,
+                                          single_dim_kernel=single_dim_kernel,
+                                          aggr_forbid_positive=aggr_forbid_positive)
         N = x.shape[0]
         F = x.shape[1]
 
         sigma_val = sigma[0]
 
-        filter,deriv_w, deriv_mu1,deriv_mu2,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel)
+        filter,deriv_w, deriv_mu1,deriv_mu2,_,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel,
+                                                                    aggr_forbid_positive=aggr_forbid_positive)
 
 
         # next we need to get gradients wrt w,mu1,mu2
@@ -586,6 +603,7 @@ class DAUConvTest(unittest.TestCase):
                            #mu1_initializer=tf.constant_initializer(0,dtype=np.float32),
                            sigma_initializer=tf.constant_initializer(sigma),
                            mu_learning_rate_factor=mu_learning_rate_factor,
+                           dau_aggregation_forbid_positive_dim1=True,
                            unit_testing=True)
 
             result = op(x)
@@ -616,10 +634,10 @@ class DAUConvTest(unittest.TestCase):
                 t_end = time.time()
                 print(t_end-t_start)
 
-            gt_fwd_vals = DAUConvPython().forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2, single_dim_kernel=True,
+            gt_fwd_vals = DAUConvPython().forward_cpu(x=x_rand, w=w, mu1=mu1, mu2=mu2, single_dim_kernel=True, aggr_forbid_positive=True,
                                                       sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore)
 
-            gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2, single_dim_kernel=True,
+            gt_bwd_vals = DAUConvPython().backward_cpu(x=x_rand, error=r_error, w=w, mu1=mu1,mu2=mu2, single_dim_kernel=True, aggr_forbid_positive=True,
                                                        sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore, unit_testing=True)
 
             # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
