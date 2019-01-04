@@ -1753,7 +1753,8 @@ private:
         TILE_DIM_S = 1,
         TILE_DIM_IMAGE_HUGE = 32,
         TILE_DIM_IMAGE_BIG = 16,
-        TILE_DIM_IMAGE_SMALL = 4
+        TILE_DIM_IMAGE_SMALL = 4,
+        TILE_DIM_IMAGE_XSMALL = 2
     };
     const int img_width_in, img_height_in;
     const int img_width;
@@ -1784,10 +1785,12 @@ public:
             TILE_DIM_IMAGE = TILE_DIM_IMAGE_BIG;
         else if (N >= TILE_DIM_IMAGE_SMALL && BLOCK_IMAGES * BATCH_IMAGES <= TILE_DIM_IMAGE_SMALL)
             TILE_DIM_IMAGE = TILE_DIM_IMAGE_SMALL;
+        else if (N >= TILE_DIM_IMAGE_XSMALL && BLOCK_IMAGES * BATCH_IMAGES <= TILE_DIM_IMAGE_XSMALL)
+            TILE_DIM_IMAGE = TILE_DIM_IMAGE_XSMALL;
         else if (BLOCK_IMAGES * BATCH_IMAGES <= 1)
             TILE_DIM_IMAGE = 1;
         else {
-            throw DAUConvNet::DAUException(string_format("Invalid number of images %d due to incompatability with TILE_DIM_IMAGE=[32,16,4 or 1], and (BLOCK_IMAGES=%d,BATCH_IMAGES=%d).\n", N, BLOCK_IMAGES, BATCH_IMAGES));
+            throw DAUConvNet::DAUException(string_format("Invalid number of images %d due to incompatability with TILE_DIM_IMAGE=[32,16,4,2 or 1], and (BLOCK_IMAGES=%d,BATCH_IMAGES=%d).\n", N, BLOCK_IMAGES, BATCH_IMAGES));
         }
         numBlocks = dim3( ((int)ceil(img_width_in*img_height_in) + threadsPerBlock.x - 1) / threadsPerBlock.x,	// over image width and height
                           ((int)ceil(S/(float)TILE_DIM_S) + threadsPerBlock.z - 1) / threadsPerBlock.z, // over S
@@ -1804,6 +1807,8 @@ public:
             interleave_input_data_kernel<TILE_DIM_XY,TILE_DIM_S,TILE_DIM_IMAGE_BIG, BATCH_PIXELS_X, BATCH_IMAGES, BLOCK_IMAGES, NEW_WIDTH, NEW_HEIGHT, BORDER_SIZE><<<numBlocks,threadsPerBlock, 0, streamId>>>(filtered_images, interleaved_images_output, N,S, img_width_in, img_height_in, img_width, img_height, new_img_parts_width, new_img_parts_height);
         else if (TILE_DIM_IMAGE >= TILE_DIM_IMAGE_SMALL)
             interleave_input_data_kernel<TILE_DIM_XY,TILE_DIM_S,TILE_DIM_IMAGE_SMALL, BATCH_PIXELS_X, BATCH_IMAGES, BLOCK_IMAGES, NEW_WIDTH, NEW_HEIGHT, BORDER_SIZE><<<numBlocks,threadsPerBlock, 0, streamId>>>(filtered_images, interleaved_images_output, N,S, img_width_in, img_height_in, img_width, img_height, new_img_parts_width, new_img_parts_height);
+        else if (TILE_DIM_IMAGE >= TILE_DIM_IMAGE_XSMALL)
+            interleave_input_data_kernel<TILE_DIM_XY,TILE_DIM_S,TILE_DIM_IMAGE_XSMALL, BATCH_PIXELS_X, BATCH_IMAGES, BLOCK_IMAGES, NEW_WIDTH, NEW_HEIGHT, BORDER_SIZE><<<numBlocks,threadsPerBlock, 0, streamId>>>(filtered_images, interleaved_images_output, N,S, img_width_in, img_height_in, img_width, img_height, new_img_parts_width, new_img_parts_height);
         else
             interleave_input_data_kernel<TILE_DIM_XY,TILE_DIM_S,1, BATCH_PIXELS_X, BATCH_IMAGES, BLOCK_IMAGES, NEW_WIDTH, NEW_HEIGHT, BORDER_SIZE><<<numBlocks,threadsPerBlock, 0, streamId>>>(filtered_images, interleaved_images_output, N,S, img_width_in, img_height_in, img_width, img_height, new_img_parts_width, new_img_parts_height);
 

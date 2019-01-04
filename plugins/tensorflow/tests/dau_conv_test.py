@@ -367,10 +367,12 @@ class DAUConvTest(unittest.TestCase):
                                                        sigma=[sigma], num_dau_units_ignore=op.num_dau_units_ignore, unit_testing=True)
 
             # interpolation in C++ code at the right edge excludes one pixel so ignore those pixels in check
-            r = r[:,:,:,:-2]
-            r_grad[0] = r_grad[0][:,:,:,:-2]
-            gt_fwd_vals = gt_fwd_vals[:,:,:,:-2]
-            gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:-2],
+            last_idx = -1 if r.shape[-1] > 1 else r.shape[-1]
+
+            r = r[:,:,:,:last_idx]
+            r_grad[0] = r_grad[0][:,:,:,:last_idx]
+            gt_fwd_vals = gt_fwd_vals[:,:,:,:last_idx]
+            gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:last_idx],
                            gt_bwd_vals[1],
                            gt_bwd_vals[2]* mu_learning_rate_factor,
                            gt_bwd_vals[3]* mu_learning_rate_factor)
@@ -383,6 +385,15 @@ class DAUConvTest(unittest.TestCase):
             self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
 
     def test_DAUConv(self):
+
+        # test spliting of the image at low N
+        self._run_DAUConv_forward_and_backward(repeat=2, N=2, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=1, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3)
+
+        # test small batch size
+        self._run_DAUConv_forward_and_backward(repeat=2, N=1, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=2, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3)
+        self._run_DAUConv_forward_and_backward(repeat=2, N=4, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3)
 
         # test small kernels (9 and 17)
         self._run_DAUConv_forward_and_backward(repeat=5, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3)
@@ -400,6 +411,8 @@ class DAUConvTest(unittest.TestCase):
         # test large kernels (33 and 65)
         self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10)
         self._run_DAUConv_forward_and_backward(repeat=2, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=65, max_offset_init=20)
+
+
 
     def test_DAUConvSpeedTest(self):
         repeat=5
