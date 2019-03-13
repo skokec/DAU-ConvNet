@@ -1,6 +1,8 @@
 # Known NVIDIA GPU achitectures DAUConvNet can be compiled for.
 # This list will be used for CUDA_ARCH_NAME = All option
-if ("${CUDA_VERSION}" VERSION_GREATER "9.0" OR "${CUDA_VERSION}" VERSION_EQUAL "9.0")
+if ("${CUDA_VERSION}" VERSION_GREATER "10.0" OR "${CUDA_VERSION}" VERSION_EQUAL "10.0")
+  set(cuda_known_gpu_archs "50 60 61 70 75")
+elseif ("${CUDA_VERSION}" VERSION_GREATER "9.0" OR "${CUDA_VERSION}" VERSION_EQUAL "9.0")
   set(cuda_known_gpu_archs "50 60 61 70")
 elseif ("${CUDA_VERSION}" VERSION_GREATER "8.0" OR "${CUDA_VERSION}" VERSION_EQUAL "8.0")
   set(cuda_known_gpu_archs "50 60 61")
@@ -93,6 +95,8 @@ function(dau_conv_cuda_select_nvcc_arch_flags out_variable)
     set(__cuda_arch_bin "60 61")
   elseif(${CUDA_ARCH_NAME} STREQUAL "Volta")
     set(__cuda_arch_bin "70")
+  elseif(${CUDA_ARCH_NAME} STREQUAL "Turing")
+    set(__cuda_arch_bin "75")
   elseif(${CUDA_ARCH_NAME} STREQUAL "All")
     set(__cuda_arch_bin ${cuda_known_gpu_archs})
   elseif(${CUDA_ARCH_NAME} STREQUAL "Auto")
