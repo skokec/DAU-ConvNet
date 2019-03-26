@@ -1,5 +1,4 @@
-#include <math_functions.h>  // CUDA's, not dau_conv_impl's, for fabs, signbit
-
+#include  <cuda_runtime_api.h>
 #include <cmath>
 #include <device_launch_parameters.h>
 

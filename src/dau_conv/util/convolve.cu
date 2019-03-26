@@ -11,7 +11,8 @@
 
 #include "dau_conv/util/common.hpp"
 
-#include <math_functions.h>
+#include <cuda_runtime_api.h>
+
 #include <cstdio>
 
 namespace DAUConvNet
