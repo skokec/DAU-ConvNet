@@ -17,6 +17,8 @@ endif()
 # ---[ DAU-ConvNet project
 project(DAUConvNet C CXX)
 
+set(PACKAGE_VERSION "1.0" CACHE STRING "DAU-ConvNet version number")
+
 # ---[ Using cmake scripts and modules
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 

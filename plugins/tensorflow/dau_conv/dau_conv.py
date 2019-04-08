@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 
@@ -14,7 +15,7 @@ from tensorflow.python.ops import init_ops
 
 from ._dau_conv_grad_op import *
 
-dau_conv_op_module = tf.load_op_library('libdau_conv_op.so')
+dau_conv_op_module = tf.load_op_library(os.path.join(os.path.dirname(os.path.realpath(__file__)),'libdau_conv_op.so'))
 
 class DAUGridMean(init_ops.Initializer):
     """Initializer for DAU means/offsets to follow the grid-based pattern, equaly spaced in each dimension.

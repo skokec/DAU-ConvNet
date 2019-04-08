@@ -1,0 +1,2 @@
+include dau_conv/*.so
+include dau_conv/tmp

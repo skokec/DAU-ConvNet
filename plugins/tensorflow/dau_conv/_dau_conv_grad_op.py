@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+import os
 import tensorflow as tf
 from tensorflow.python.framework import ops
 
-dau_conv_grad_module = tf.load_op_library('libdau_conv_grad_op.so')
+dau_conv_grad_module = tf.load_op_library(os.path.join(os.path.dirname(os.path.realpath(__file__)),'libdau_conv_grad_op.so'))
 
 
 @ops.RegisterGradient("DAUConv")
