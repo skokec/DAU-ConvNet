@@ -76,8 +76,8 @@ cd DAU-ConvNet/build
 
 cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on ..
 
-make -j
-make install # will install .so into /usr/local and python module into python dist-packages folder 
+make -j # creates whl file in build/plugin/tensorflow/wheelhouse
+make install # will install whl package (with .so files) into python dist-packages folder 
 
 ```
 
