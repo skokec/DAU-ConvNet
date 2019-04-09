@@ -65,11 +65,7 @@ RUN mkdir build && cd build && \
 RUN $PYTHON -m pip install tensorflow-gpu==$TF_VER
 
 
-# Install python-tk, scipy and matplotlib for testing
-#RUN apt-get install -y python-tk
-#RUN $PYTHON -m pip --no-cache-dir install scipy matplotlib
-
-# Install two scripts that will verify integrety of build
+# Install two scripts that will verify integrity of build with tests
 COPY verify_dau_import.py /opt/verify_dau_import.py
 COPY test_dau.sh /opt/test_dau.sh
 

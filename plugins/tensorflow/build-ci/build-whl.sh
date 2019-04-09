@@ -1,5 +1,20 @@
 #!/bin/bash
 
+# This script builds dau-conv package for various TensorFlow and Python version
+#
+# Below is defined a list of all tensorflow builds (TF_BUILDS) and python builds (PYTHON_BUILDS)
+# for which DAU-ConvNet package will be build. 
+#
+# This script performs:
+#  1. For all combinations of TensorFlow na Python version perform build using a prepared docker file
+#
+#  2. After all images are build it performs the following tests:
+#    - integirety check by running "import dau_conv" within container
+#    - quick unit test by running test "python tests/dau_conv_test.py DAUConvTest.test_DAUConvQuick
+#
+#  3. Wheel packages (.whl) are stored to the same location of this script.
+
+
 # list of all TensorFlow version with corresponding nvidia/cuda image version 
 # version and base image str are seperated by semicolumn (;)
 TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04")
@@ -8,6 +23,7 @@ TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04")
 #PYTHON_BUILDS=(2.7 3.3 3.4 3.5 3.6 3.7)
 PYTHON_BUILDS=(3.5)
 
+echo "Building docker images for:"
 for TF_VER_BUILD_STR in "${TF_BUILDS[@]}"
 do
   IFS=";" read -r -a TF_VER_BUILD <<< "${TF_VER_BUILD_STR}"
@@ -15,12 +31,15 @@ do
   TF_BASE_IMAGE=${TF_VER_BUILD[1]}
   for PY_VER in "${PYTHON_BUILDS[@]}"
   do
+    echo -n "  dau-convnet:py${PY_VER}-r${TF_VER} ... "
     BUILD_LOG="build_dau_py${PY_VER}_r${TF_VER}.log"
     nvidia-docker build -t dau-convnet:py${PY_VER}-r${TF_VER} \
 			--build-arg BASE_CUDA_VERSION=${TF_BASE_IMAGE} \
 			--build-arg TF_VER=${TF_VER} \
 			--build-arg PY_VER=${PY_VER} \
 			--build-arg PY_VER_MAJOR=${PY_VER%.*} docker/ >& ${BUILD_LOG}
+    echo "done"
+
   done
 done
 
@@ -64,7 +83,7 @@ do
       nvidia-docker run -i --rm --name ${CONTAINER_NAME} -v $WHL_TMP_DIR:/opt/output dau-convnet:py${PY_VER}-r${TF_VER} \
 	 /bin/bash -c "cp build/plugins/tensorflow/wheelhouse/*.whl /opt/output/ "
       rename "s/${WHL_STR}/${WHL_REPLACEMENT_STR}/g" $WHL_TMP_DIR/*.whl
-      mv $WHL_TMP_DIR/*.whl build-ci/.
+      mv $WHL_TMP_DIR/*.whl `dirname "$0"`/.
       rm -rf $WHL_TMP_DIR
       echo "done"
     fi
