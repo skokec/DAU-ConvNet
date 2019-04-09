@@ -306,7 +306,7 @@ class DAUConvTest(unittest.TestCase):
 
         self.assertTrue(avg_diff <= rel_tolerance or num_diff_rate <= 1e-2)
 
-    def _run_DAUConv_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init):
+    def _run_DAUConv_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init, plot_diff=True):
 
         for i in range(repeat):
             mu_learning_rate_factor = 1000
@@ -377,12 +377,33 @@ class DAUConvTest(unittest.TestCase):
                            gt_bwd_vals[2]* mu_learning_rate_factor,
                            gt_bwd_vals[3]* mu_learning_rate_factor)
 
-            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=True)
+            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=plot_diff)
 
-            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=True)
-            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
+            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=plot_diff)
+            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+
+    def test_DAUConvQuick(self):
+
+        # test spliting of the image at low N
+        self._run_DAUConv_forward_and_backward(repeat=1, N=2, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=1, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+
+        # test small batch size
+        self._run_DAUConv_forward_and_backward(repeat=1, N=1, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=4, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+
+        # test small kernels (9 and 17)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6, plot_diff=False)
+
+        # test with dynamic kernel size optimization (using smaller kernel dispite large allowed kernel)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3, plot_diff=False)
+
+        # test with uneven number of sub-features
+        self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=3, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3, plot_diff=False)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=64, H=64, S=3, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10, plot_diff=False)
 
     def test_DAUConv(self):
 
@@ -594,7 +615,7 @@ class DAUConvTest(unittest.TestCase):
                 t_end = time.time()
                 print(t_end-t_start)
 
-    def _run_DAUConv1d_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init):
+    def _run_DAUConv1d_forward_and_backward(self, repeat, N, W, H, S, F, dau_uints, max_kernel_size, max_offset_init, plot_diff=True):
 
         for i in range(repeat):
             mu_learning_rate_factor = 1000
@@ -662,12 +683,12 @@ class DAUConvTest(unittest.TestCase):
                            gt_bwd_vals[2]* mu_learning_rate_factor,
                            gt_bwd_vals[3]* mu_learning_rate_factor)
 
-            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=True)
+            self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=plot_diff)
 
-            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=True)
-            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=True)
-            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=True)
+            self._assertMatrix(r_grad[0], gt_bwd_vals[0], 'bwd_error', rel_tolerance=0.01,plot_difference=plot_diff)
+            self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+            self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+            self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=plot_diff)
 
     def test_DAUConv1d(self):
 
