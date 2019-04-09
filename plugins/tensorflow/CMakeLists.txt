@@ -134,9 +134,9 @@ configure_file(${SETUP_PY_IN} ${SETUP_PY})
 add_custom_command(OUTPUT ${WHEELHOUSE}
 	COMMAND cp -r ${CMAKE_CURRENT_SOURCE_DIR}/${DAU_CONV_MODULE_NAME} .
 	COMMAND cp *.so  ${DAU_CONV_MODULE_NAME}
-	COMMAND ${PYTHON_EXECUTABLE} -m pip wheel . -w ${WHEELHOUSE}
+	COMMAND ${PYTHON_EXECUTABLE} -m pip wheel . -w ${WHEELHOUSE} --no-deps
         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${DAU_CONV_MODULE_NAME}" dau_conv_tensorflow dau_conv_op dau_conv_grad_op)
 
 add_custom_target(target ALL DEPENDS ${WHEELHOUSE} dau_conv_tensorflow dau_conv_op dau_conv_grad_op)
 
-install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} -m pip install --find-links=${WHEELHOUSE} --force-reinstall ${DAU_CONV_MODULE_NAME}==${PACKAGE_VERSION}-TF${TF_VERSION})")
+install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} -m pip install --find-links=${WHEELHOUSE} --force-reinstall --no-deps ${DAU_CONV_MODULE_NAME}==${PACKAGE_VERSION}-TF${TF_VERSION})")

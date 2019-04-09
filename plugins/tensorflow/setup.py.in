@@ -3,6 +3,6 @@ from distutils.core import setup
 setup(name='dau_conv',
       version='${PACKAGE_VERSION}-TF${TF_VERSION}',
       include_package_data=True,
-      install_requires=["tensorflow==${TF_VERSION}"]
+      install_requires=["tensorflow==${TF_VERSION}"],
       packages=['${DAU_CONV_MODULE_NAME}'])
 
