@@ -47,14 +47,14 @@ do
       echo "OK"
 
       UNITTEST_LOG="test_dau_py${PY_VER}_r${TF_VER}.log"
-      #echo -n "  Running UnitTest ... "
-      #nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} >& ${UNITTEST_LOG}
-      #STATUS=$?
-      #if [ ${STATUS} -ne 0 ]; then
-      #  echo "ERROR: check ${UNITTEST_LOG} for logs."
-      #else
-      #  echo "OK"
-      #fi
+      echo -n "  Running UnitTest ... "
+      nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} >& ${UNITTEST_LOG}
+      STATUS=$?
+      if [ ${STATUS} -ne 0 ]; then
+        echo "ERROR: check ${UNITTEST_LOG} for logs."
+      else
+        echo "OK"
+      fi
       echo -n "  Copying .whl package to build-ci ... "
       WHL_STR="py${PY_VER_MAJOR}-none-any"
       WHL_REPLACEMENT_STR="cp${PY_VER_STR}-cp${PY_VER_STR}m_linux_x86_64"
