@@ -17,16 +17,16 @@
 
 # list of all TensorFlow version with corresponding nvidia/cuda image version 
 # version and base image str are seperated by semicolumn (;)
-TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04" \
-	   "1.12;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-   	   "1.11;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-	   "1.10.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-           "1.10;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-           "1.9;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-           "1.8;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-           "1.7.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-	   "1.7;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
-           "1.6;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" )
+TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04" )
+#	   "1.12;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#   	   "1.11;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#	   "1.10.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#           "1.10;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#           "1.9;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#           "1.8;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#           "1.7.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#	   "1.7;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#           "1.6;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" )
 # Not supported yet - needs code change
 #	   "1.5.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
 #          "1.5;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
@@ -91,15 +91,15 @@ do
       echo "OK"
 
       UNITTEST_LOG="test_dau_py${PY_VER}_r${TF_VER}.log"
-      echo -n "  Running UnitTest ... "
-      nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
-      STATUS=$?
-
-      if [ ${STATUS} -ne 0 ]; then
-        echo "ERROR: check ${UNITTEST_LOG} for logs."
-      else
-        echo "OK"
-      fi
+#      echo -n "  Running UnitTest ... "
+#      nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
+#      STATUS=$?
+#
+#      if [ ${STATUS} -ne 0 ]; then
+#        echo "ERROR: check ${UNITTEST_LOG} for logs."
+#      else
+#        echo "OK"
+#      fi
       echo -n "  Copying .whl package to build-ci ... "
       WHL_STR="py${PY_VER_MAJOR}-none-any"
       WHL_REPLACEMENT_STR="cp${PY_VER_STR}-cp${PY_VER_STR}m-manylinux1_x86_64"

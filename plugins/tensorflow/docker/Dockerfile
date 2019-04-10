@@ -46,7 +46,7 @@ RUN apt-get install -y $PYTHON \
                        $PYTHON_MAJOR-pip && \
     apt-get clean
 
-RUN $PYTHON -m pip --no-cache-dir install numpy
+RUN $PYTHON -m pip --no-cache-dir install numpy pathlib
 RUN $PYTHON -m pip install tensorflow==$TF_VER
 
 # NOTE: since docker build does not provide nvidia drivers we cannot run "import tensorflow"
