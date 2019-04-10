@@ -15,6 +15,10 @@ from tensorflow.python.ops import init_ops
 
 from ._dau_conv_grad_op import *
 
+# preload libdau_conv_tensorflow.so manuall since it is most likely not on the LD_LIBRARY_PATH
+from ctypes import cdll
+cdll.LoadLibrary(os.path.join(os.path.dirname(os.path.realpath(__file__)),'libdau_conv_tensorflow.so'))
+
 dau_conv_op_module = tf.load_op_library(os.path.join(os.path.dirname(os.path.realpath(__file__)),'libdau_conv_op.so'))
 
 class DAUGridMean(init_ops.Initializer):

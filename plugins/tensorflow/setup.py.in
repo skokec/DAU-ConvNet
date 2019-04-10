@@ -15,6 +15,6 @@ setup(name='dau_conv',
       author="Domen Tabernik",
       author_email="domen.tabernik@fri.uni-lj.si",
       include_package_data=True,
-      install_requires=["tensorflow-gpu==${TF_VERSION}"]
+      install_requires=["tensorflow-gpu==${TF_VERSION}"],
       packages=['${DAU_CONV_MODULE_NAME}'])
 
