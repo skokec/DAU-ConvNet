@@ -347,7 +347,7 @@ class DAUConvTest(unittest.TestCase):
 
             c = tf.ConfigProto(allow_soft_placement=True,
                                log_device_placement=True)
-            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.visible_device_list = '0'
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
@@ -484,7 +484,7 @@ class DAUConvTest(unittest.TestCase):
 
             c = tf.ConfigProto(allow_soft_placement=True,
                                log_device_placement=True)
-            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.visible_device_list = '0'
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
@@ -538,7 +538,7 @@ class DAUConvTest(unittest.TestCase):
 
             c = tf.ConfigProto(allow_soft_placement=True,
                                log_device_placement=True)
-            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.visible_device_list = '0'
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
@@ -601,7 +601,7 @@ class DAUConvTest(unittest.TestCase):
 
         c = tf.ConfigProto(allow_soft_placement=True,
                            log_device_placement=True)
-        c.gpu_options.visible_device_list = '2'
+        c.gpu_options.visible_device_list = '0'
         c.gpu_options.allow_growth = True
 
         with tf.Session(config=c) as s:
@@ -655,7 +655,7 @@ class DAUConvTest(unittest.TestCase):
 
             c = tf.ConfigProto(allow_soft_placement=True,
                                log_device_placement=True)
-            c.gpu_options.visible_device_list = '2'
+            c.gpu_options.visible_device_list = '0'
             c.gpu_options.allow_growth = True
 
             with tf.Session(config=c) as s:
