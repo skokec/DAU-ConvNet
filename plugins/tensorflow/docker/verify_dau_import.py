@@ -1,5 +1,6 @@
+import sys
 try:
      import dau_conv
-     print(0)
 except:
-     print(1)
+     sys.exit(1)
+sys.exit(0)

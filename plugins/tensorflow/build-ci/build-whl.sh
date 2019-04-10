@@ -17,11 +17,26 @@
 
 # list of all TensorFlow version with corresponding nvidia/cuda image version 
 # version and base image str are seperated by semicolumn (;)
-TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04")
+TF_BUILDS=("1.13.1;nvidia/cuda:10.0-cudnn7-devel-ubuntu16.04" \
+	   "1.12;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+   	   "1.11;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+	   "1.10.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+           "1.10;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+           "1.9;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+           "1.8;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+           "1.7.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+	   "1.7;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+           "1.6;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" )
+# Not supported yet - needs code change
+#	   "1.5.1;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#          "1.5;nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04" \
+#	   "1.4.1;nvidia/cuda:8.0-cudnn6-devel-ubuntu14.04" \
+#	   "1.4;nvidia/cuda:8.0-cudnn6-devel-ubuntu14.04")
 
 # python build numbers
 #PYTHON_BUILDS=(2.7 3.3 3.4 3.5 3.6 3.7)
-PYTHON_BUILDS=(3.5)
+#PYTHON_BUILDS=(3.5 2.7)
+PYTHON_BUILDS=(3.5 2.7 )
 
 echo "Building docker images for:"
 for TF_VER_BUILD_STR in "${TF_BUILDS[@]}"
@@ -33,13 +48,22 @@ do
   do
     echo -n "  dau-convnet:py${PY_VER}-r${TF_VER} ... "
     BUILD_LOG="build_dau_py${PY_VER}_r${TF_VER}.log"
+    PY_VER_MAJOR=${PY_VER%.*}
+    if [ ${PY_VER_MAJOR} -eq 2 ]; then
+       PY_VER_MAJOR=""
+    fi
+
     nvidia-docker build -t dau-convnet:py${PY_VER}-r${TF_VER} \
 			--build-arg BASE_CUDA_VERSION=${TF_BASE_IMAGE} \
 			--build-arg TF_VER=${TF_VER} \
 			--build-arg PY_VER=${PY_VER} \
-			--build-arg PY_VER_MAJOR=${PY_VER%.*} docker/ >& ${BUILD_LOG}
-    echo "done"
-
+			--build-arg PY_VER_MAJOR="${PY_VER_MAJOR}" docker/ >& ${BUILD_LOG}
+    STATUS=$?
+    if [ ${STATUS} -ne 0 ]; then
+      echo "ERROR: check ${BUILD_LOG} for logs."
+    else
+      echo "OK"
+    fi
   done
 done
 
@@ -58,7 +82,8 @@ do
     echo "Testing dau-convnet:py${PY_VER}-r${TF_VER}:"
 
     echo -n "  Verifying dau_conv package integrity ... "
-    STATUS=`nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /usr/bin/python${PY_VER} /opt/verify_dau_import.py`
+    nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /usr/bin/python${PY_VER} /opt/verify_dau_import.py
+    STATUS=$?
 
     if [ ${STATUS} -ne 0 ]; then
       echo "ERROR: cannot run 'import dau_conv'"
@@ -67,8 +92,9 @@ do
 
       UNITTEST_LOG="test_dau_py${PY_VER}_r${TF_VER}.log"
       echo -n "  Running UnitTest ... "
-      nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} >& ${UNITTEST_LOG}
+      nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
       STATUS=$?
+
       if [ ${STATUS} -ne 0 ]; then
         echo "ERROR: check ${UNITTEST_LOG} for logs."
       else
@@ -76,7 +102,7 @@ do
       fi
       echo -n "  Copying .whl package to build-ci ... "
       WHL_STR="py${PY_VER_MAJOR}-none-any"
-      WHL_REPLACEMENT_STR="cp${PY_VER_STR}-cp${PY_VER_STR}m_linux_x86_64"
+      WHL_REPLACEMENT_STR="cp${PY_VER_STR}-cp${PY_VER_STR}m-manylinux1_x86_64"
 
       WHL_TMP_DIR=/tmp/whl-${PY_VER}-r${TF_VER}
       mkdir $WHL_TMP_DIR
