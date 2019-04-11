@@ -26,14 +26,6 @@ Please cite our CVPR 2018 paper when using DAU code:
 
 We thank Vitjan Zavrtanik (VitjanZ) for TensorFlow C++/Python wrapper. 
 
-## Requirements and dependency libraries for DAU-ConvNet ##
- * Ubuntu 16.04 (not tested on other OS and other versions)
- * C++11
- * CMake 2.8 or newer (tested on version 3.5)
- * CUDA SDK Toolkit (tested on version 8.0 and 9.0)
- * BLAS (ATLAS or OpenBLAS)
- * cuBlas
- 
 # Caffe #
 A Caffe implementation based on this library is available in [DAU-ConvNet-caffe](https://github.com/skokec/DAU-ConvNet-caffe) repository. 
 
@@ -42,20 +34,51 @@ Pretrained models for Caffe from CVPR 2018 papers are available:
 * [AlexNet-DAU-ConvNet-small](https://gist.github.com/skokec/c9748b5d7ff99fcce7a20b9a2806004f) (56.4% top-1 accuracy, 0.3 mio DAU units)
 * [AlexNet-DAU-ConvNet-large](https://gist.github.com/skokec/d3b97367af569524fb85cf026cf5dcb8) (57.3% top-1 accuracy, 1.5 mio DAU units)
 
-
 # TensorFlow #
 
-We provide TensorFlow plugin and appropriate Python wrappers that can be used to directly replace the `tf.contrib.layers.conv2d` function. Note, our C++/CUDA code natively supports only NCHW format for input, please update your TensorFlow models to use this format.  
+We provide TensorFlow plugin and appropriate Python wrappers that can be used to directly replace the `tf.contrib.layers.conv2d` function. Note, our C++/CUDA code natively supports only NCHW format for input, please update your TensorFlow models to use this format. 
 
-## Additional requirements and dependency libraries for TensorFlow plugin ##
- * Requirements for DAU-ConvNet library (see above)
+Requirements and dependency libraries for TensorFlow plugin:
  * Python (tested on Python2.7 and Python3.5)
- * TensorFlow 1.6 or newer
+ * TensorFlow 1.6 or newer 
  * Numpy
+ * OpenBlas
  * (optional) Scipy, matplotlib and python-tk  for running unit test in `dau_conv_test.py`
  
+## Instalation from pre-compiled binaries (pip)
+
+If your are using `tensorflow` from pip, then pre-compiled binaries (.whl) for pip are avialable at [box.vicos.si](ftp://box.vicos.si/skokec/dau-convnet) and can be installed using:
+
+```bash
+# install dependency library (OpenBLAS)
+sudo apt-get install libopenblas-dev
+
+# install dau-conv package
+wget ftp://box.vicos.si/skokec/dau-convnet/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl
+sudo pip install dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl 
+```
+
+Note that pip packages were compiled againts the specific version of TensorFlow from pip and must be installed beforhand.
+
+## Docker 
+
+Pre-compiled docker images for TensorFlow are also available on [Docker Hub](https://hub.docker.com/r/skokec/dau-convnet) that are build using the [`plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile). 
+
+Dockers are build for specific python and TensorFlow version. Start docker, for instance, for Python3.5 and TensorFlow r1.13.1, using:
+
+```bash
+sudo nvidia-docker run -i -d -t skokec/tf-dau-convnet:1.0-py3.5-tf1.13.1 /bin/bash
+```
 
 ## Build and installation ##
+
+Requirements and dependency libraries to compile DAU-ConvNet:
+ * Ubuntu 16.04 (not tested on other OS and other versions)
+ * C++11
+ * CMake 2.8 or newer (tested on version 3.5)
+ * CUDA SDK Toolkit (tested on version 8.0 and 9.0)
+ * BLAS (ATLAS or OpenBLAS)
+ * cuBlas
 
 On Ubuntu 16.04 with pre-installed CUDA and cuBLAS (e.g. using nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04 or nvidia/cuda:8.0-cudnn5-devel-ubuntu16.04 docker) install dependencies first:
 
@@ -91,14 +114,14 @@ apt-get install python-tk
                 
 pip install scipy matplotlib
 
-python DAU-ConvNet/plugins/tensorflow/tests/dau_conv_test.py
+python DAU-ConvNet/plugins/tensorflow/tests/dau_conv_test.py DAUConvTest.test_DAUConvQuick
 ```
 
 ### Common issues ###
 
 __I got `undefined symbol: _ZN9perftools8gputools4cuda17AsCUDAStreamValueEPNS0_6StreamE` when running the code.__
 
-Please make sure that your TensorFlow is compiled against GPU/CUDA. In pip the `tensroflow` and `tensorflow-gpu` packages provide the same libtensorflow_framework.so in the same folder but only `tensorflow-gpu` has the the .so that is compiled against the CUDA. If `tensroflow` gets installed _after_ the `tensorflow-gpu` then .so with CUDA support will be overriden by the .so without it. Make sure to install `tensorflow-gpu` the last or not to install `tensroflow` at all.
+Please make sure that your TensorFlow is compiled against GPU/CUDA. In pip the `tensroflow` and `tensorflow-gpu` packages provide the same libtensorflow_framework.so in the same folder but only `tensorflow-gpu` has the .so that is compiled against the CUDA. If `tensroflow` gets installed _after_ the `tensorflow-gpu` then .so with CUDA support will be overriden by the .so without it. Make sure to install `tensorflow-gpu` the last or not to install `tensroflow` at all.
 
 ## Usage ##
 
