@@ -1,18 +1,8 @@
-import pathlib
-
 from distutils.core import setup
-
-# The directory containing this file
-HERE = pathlib.Path(__file__).parent
-
-# The text of the README file
-README = (HERE / "README.md").read_text()
 
 setup(name='dau_conv',
       version='${PACKAGE_VERSION}-TF${TF_VERSION}',
       description='DAU-ConvNet (Displaced Aggregation Units) package for TensorFlow',
-      long_description=README,
-      long_description_content_type="text/markdown",
       url="https://https://github.com/skokec/DAU-ConvNet",
       author="Domen Tabernik",
       author_email="domen.tabernik@fri.uni-lj.si",

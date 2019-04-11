@@ -63,7 +63,8 @@ On Ubuntu 16.04 with pre-installed CUDA and cuBLAS (e.g. using nvidia/cuda:9.0-c
 apt-get update
 apt-get install cmake python python-pip libopenblas-dev
  
-pip install tensorflow>=1.6 tensorflow-gpu>=1.6
+pip install tensorflow-gpu>=1.6
+# Note: during instalation tensorflow package is sufficent, but during running the tensorflow-gpu is required.
 ```
 
 Then clone the repository and build from source:
@@ -93,6 +94,11 @@ pip install scipy matplotlib
 python DAU-ConvNet/plugins/tensorflow/tests/dau_conv_test.py
 ```
 
+### Common issues ###
+
+__I got `undefined symbol: _ZN9perftools8gputools4cuda17AsCUDAStreamValueEPNS0_6StreamE` when running the code.__
+
+Please make sure that your TensorFlow is compiled against GPU/CUDA. In pip the `tensroflow` and `tensorflow-gpu` packages provide the same libtensorflow_framework.so in the same folder but only `tensorflow-gpu` has the the .so that is compiled against the CUDA. If `tensroflow` gets installed _after_ the `tensorflow-gpu` then .so with CUDA support will be overriden by the .so without it. Make sure to install `tensorflow-gpu` the last or not to install `tensroflow` at all.
 
 ## Usage ##
 
