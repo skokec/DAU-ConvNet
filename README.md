@@ -51,7 +51,7 @@ If your are using `tensorflow` from pip, then pre-compiled binaries (.whl) for p
 
 ```bash
 # install dependency library (OpenBLAS)
-sudo apt-get install libopenblas-dev
+sudo apt-get install libopenblas-dev  wget
 
 # install dau-conv package
 wget ftp://box.vicos.si/skokec/dau-convnet/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl
