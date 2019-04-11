@@ -14,9 +14,12 @@
 #
 #  3. Wheel packages (.whl) are stored to the same location of this script.
 
+DOCKER_EXEC=nvidia-docker
+
 DAU_VERSION=1.0
 DOCKER_IMG_NAME=dau-convnet
 UNITTEST_DOCKER=0
+DOCKER_HUB_REPO=""
 
 # python build numbers
 PYTHON_BUILDS=(3.5 2.7)
@@ -65,6 +68,11 @@ case $i in
     UNITTEST_DOCKER=1
     shift # past argument
     ;;
+    --docker-hub-repo=*)
+    DOCKER_HUB_REPO="${i#*=}"
+    shift # past argument
+    ;;
+
     *)
 	 # unknown option
     ;;
@@ -86,17 +94,19 @@ do
   TF_BASE_IMAGE=${TF_VER_BUILD[1]}
   for PY_VER in "${PYTHON_BUILDS[@]}"
   do
-    echo -n "  dau-convnet:py${PY_VER}-r${TF_VER} ... "
-    BUILD_LOG="build_dau_py${PY_VER}_r${TF_VER}.log"
+    DOCKER_IMG_TAG=${DAU_VERSION}-py${PY_VER}-tf${TF_VER}
+
+    echo -n "  ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} ... "
+
+    BUILD_LOG="build_dau_${DOCKER_IMG_TAG}.log"
     PY_VER_MAJOR=${PY_VER%.*}
     if [ ${PY_VER_MAJOR} -eq 2 ]; then
        PY_VER_MAJOR=""
     fi
 
     DAU_CMAKE_FLAGS="-DPACKAGE_VERSION=${DAU_VERSION}"
-    DOCKER_IMG_TAG=${DAU_VERSION}-py${PY_VER}-tf${TF_VER}
 
-    nvidia-docker build -t ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
+    ${DOCKER_EXEC} build -t ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
 			--build-arg BASE_CUDA_VERSION=${TF_BASE_IMAGE} \
 			--build-arg TF_VER=${TF_VER} \
 			--build-arg PY_VER=${PY_VER} \
@@ -126,10 +136,10 @@ do
     DOCKER_IMG_TAG=${DAU_VERSION}-py${PY_VER}-tf${TF_VER}
     CONTAINER_NAME="integration-testing-dau-convnet-${DOCKER_IMG_TAG}"
 
-    echo "Testing dau-convnet:py${PY_VER}-r${TF_VER}:"
+    echo "Testing ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG}:"
 
     echo -n "  Verifying dau_conv package integrity ... "
-    nvidia-docker run -i --rm --name ${CONTAINER_NAME} ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /usr/bin/python${PY_VER} /opt/verify_dau_import.py
+    ${DOCKER_EXEC} run -i --rm --name ${CONTAINER_NAME} ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /usr/bin/python${PY_VER} /opt/verify_dau_import.py
     STATUS=$?
 
     if [ ${STATUS} -ne 0 ]; then
@@ -138,9 +148,9 @@ do
       echo "OK"
 
       if [ ${UNITTEST_DOCKER} -ne 0 ]; then
-        UNITTEST_LOG="test_dau_py${PY_VER}_r${TF_VER}.log"
+        UNITTEST_LOG="test_dau_${DOCKER_IMG_TAG}.log"
         echo -n "  Running UnitTest ... "
-        nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
+        ${DOCKER_EXEC} run -i --rm --name ${CONTAINER_NAME} ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
         STATUS=$?
 
         if [ ${STATUS} -ne 0 ]; then
@@ -160,12 +170,28 @@ do
 
       WHL_TMP_DIR=/tmp/whl-${DOCKER_IMG_TAG}
       mkdir $WHL_TMP_DIR
-      nvidia-docker run -i --rm --name ${CONTAINER_NAME} -v $WHL_TMP_DIR:/opt/output ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
+      ${DOCKER_EXEC} run -i --rm --name ${CONTAINER_NAME} -v $WHL_TMP_DIR:/opt/output ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
 	 /bin/bash -c "cp build/plugins/tensorflow/wheelhouse/*.whl /opt/output/ "
       rename "s/${WHL_STR}/${WHL_REPLACEMENT_STR}/g" $WHL_TMP_DIR/*.whl
       mv -f $WHL_TMP_DIR/*.whl `dirname "$0"`/.
       rm -rf $WHL_TMP_DIR
       echo "done"
+
+     if [ ! -z "${DOCKER_HUB_REPO}"  ]; then
+       echo -n "  Tagging and pushing docker to DockerHub ... "
+
+       DOCKERPUSH_LOG="docker_push_dau_${DOCKER_IMG_TAG}.log"
+
+       ${DOCKER_EXEC} tag ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} ${DOCKER_HUB_REPO}/${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} >& /dev/null
+       ${DOCKER_EXEC} push ${DOCKER_HUB_REPO}/${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} &> ${DOCKERPUSH_LOG}
+       STATUS=$?
+
+       if [ ${STATUS} -ne 0 ]; then
+	 echo "ERROR: check ${DOCKERPUSH_LOG} for logs."
+       else
+         echo "OK"
+       fi
+     fi
     fi
   done
 done
