@@ -3,6 +3,8 @@ FROM $BASE_CUDA_VERSION
 
 LABEL maintainer "domen.tabernik@fri.uni-lj.si"
 
+ARG DAU_CMAKE_FLAGS=""
+
 # TF/PY version argument must be after FROM statement
 ARG TF_VER=1.13.1
 ARG PY_VER=3.5
@@ -58,7 +60,7 @@ RUN git clone https://github.com/skokec/DAU-ConvNet . &&  \
     git submodule update --init --recursive
    
 RUN mkdir build && cd build && \
-    cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/$PYTHON" .. && \
+    cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/$PYTHON" $DAU_CMAKE_FLAGS .. && \
     make -j install
 
 # We need to install back GPU support for tensorflow 
