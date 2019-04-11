@@ -52,11 +52,13 @@ case $i in
     shift # past argument
     ;;
     --python-builds=*)
+    PYTHON_BUILDS=""
     IFS=',' read -r -a PYTHON_BUILDS <<< "${i#*=}"
     shift # past argument
     ;;
-    --tf-builds)
-    IFS=',' read -r -a TF_BUILDS <<< "$2"
+    --tf-builds=*)
+    TF_BUILDS=""
+    IFS=',' read -r -a TF_BUILDS <<< "${i#*=}"
     shift # past argument
     ;;
     --unit-test)
@@ -68,6 +70,13 @@ case $i in
     ;;
 esac
 done
+
+echo "Settings:"
+echo "  DAU_VERSION=${DAU_VERSION}"
+echo "  DOCKER_IMG_NAME=${DOCKER_IMG_NAME}"
+echo "  PYTHON_BUILDS=${PYTHON_BUILDS[*]}"
+echo "  TF_BUILDS=${TF_BUILDS[*]}"
+echo "  UNITTEST_DOCKER=${UNITTEST_DOCKER}"
 
 echo "Building docker images for:"
 for TF_VER_BUILD_STR in "${TF_BUILDS[@]}"
@@ -128,7 +137,7 @@ do
     else
       echo "OK"
 
-      if [ ${UNITTEST_DOCKER} -ne 0]; then
+      if [ ${UNITTEST_DOCKER} -ne 0 ]; then
         UNITTEST_LOG="test_dau_py${PY_VER}_r${TF_VER}.log"
         echo -n "  Running UnitTest ... "
         nvidia-docker run -i --rm --name ${CONTAINER_NAME} dau-convnet:py${PY_VER}-r${TF_VER} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
