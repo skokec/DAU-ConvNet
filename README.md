@@ -222,7 +222,7 @@ dau_conv.DAUGridMean(dau_units, # number of DAU units per image axis e.g. (2,2) 
 
 Current implementation is limited to using only the following settings:
  * `data_format = 'NCHW'`: only 'NCHW' format available in our C++/CUDA implementation
- * number of input and output channels must be at least a multiple of 4
+ * number of output channels must be at least a multiple of 16 or 32 (depending on batch size) 
  * `stride = 1`: striding not implemented yet
  * `max_kernel_size <= 65`: due to pre-defined CUDA kernels max offsets are restricted to specific values:
    * `max_kernel_size <= 9` and `max_kernel_size <= 17`: most optimal kernel implementations
