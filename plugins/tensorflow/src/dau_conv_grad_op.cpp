@@ -115,6 +115,9 @@ public:
         // in_train is used only for merge_iteration_step, which is not setup.
         bool in_train = false;
 
+        // enable learning of sigma by default (tensorflow can then ignore it if trainable is set to false)
+        bool learn_sigma = true;
+
         const Tensor *grad;
         const Tensor *input;
         const Tensor *weights;
@@ -145,7 +148,7 @@ public:
         DCHECK_EQ(dau_conv_settings_.num_output, weights_shape.dim_size(weights_shape.dims()-1));
         DCHECK_EQ(dau_conv_settings_.num_output, mu1_shape.dim_size(mu1_shape.dims()-1));
         DCHECK_EQ(dau_conv_settings_.num_output, mu2_shape.dim_size(mu2_shape.dims()-1));
-        //DCHECK_EQ(dau_conv_settings.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
+        DCHECK_EQ(dau_conv_settings_.num_output, sigma_shape.dim_size(sigma_shape.dims()-1));
 
         // create output tensors
         Tensor *grad_input = NULL;
@@ -195,7 +198,7 @@ public:
             CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_weights,Dtype),0, grad_weights->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
             CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_mu1, Dtype),0, grad_mu1->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
             CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_mu2, Dtype),0, grad_mu2->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
-            //CUDA_CHECK(cudaMemsetAsync(reinterpret_cast<Dtype*>(grad_sigma->flat<Dtype>().data()),0, grad_sigma->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
+            CUDA_CHECK(cudaMemsetAsync(TENSOR_DATA_PTR(grad_sigma, Dtype),0, grad_sigma->NumElements() * sizeof(Dtype), default_tf_cuda_stream));
 
 
             // next find out max offset value and optimize the size of kernels to accommodate all offsets
@@ -261,6 +264,9 @@ public:
             tf_layer.set_single_dimensional_kernel(this->single_dim_kernel);
             tf_layer.set_forbid_positive_dim1(this->forbid_positive_dim1);
 
+            // enable learning of sigma
+            tf_layer.enable_sigma_learning(learn_sigma);
+
             tf_layer.InitializeFromInput(dau_conv_settings_, (Tensor *) weights, (Tensor *) mu1, (Tensor *) mu2,
                                          (Tensor *) sigma);
 
@@ -281,7 +287,7 @@ public:
 
 
             tf_layer.Backward_gpu(NULL, top_error, top_shape, true, bottom_data, bottom_error, bottom_shape,
-                                  {true, true, this->single_dim_kernel == false ? true : false, false, false});
+                                  {true, true, this->single_dim_kernel == false ? true : false, learn_sigma, false});
 
             // multiply mu with learning rate if needed
             if (mu_learning_rate_factor != 1.0) {

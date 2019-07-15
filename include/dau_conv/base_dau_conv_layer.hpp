@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <memory>
+#include <cassert>
 
 #include "dau_conv/dau_conv_impl/dau_conv_backward.hpp"
 #include "dau_conv/dau_conv_impl/dau_conv_forward.hpp"
@@ -208,7 +209,7 @@ public:
     void enable_memalloc_info(bool enable) {this->enabled_memalloc_info = enable; }
 
     void enable_unit_bounds_guard(bool enable)  { this->enable_unit_bounds_guard_ = enable; }
-
+    void enable_sigma_learning(bool enable) { this->last_k_optional = enable == false; assert(NUM_K == 4);  }
     void set_single_dimensional_kernel(bool single_dim)  { this->single_dimension_kernel = single_dim; }
     void set_forbid_positive_dim1(bool forbid_positive_dim1)  { this->forbid_positive_dim1 = forbid_positive_dim1; }
 

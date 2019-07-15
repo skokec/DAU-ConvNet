@@ -248,6 +248,7 @@ class DAUConv2d(base.Layer):
                  dau_unit_border_bound=0.01,
                  dau_unit_single_dim=False,
                  dau_aggregation_forbid_positive_dim1=False,
+                 dau_sigma_trainable=False,
                  unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
@@ -327,6 +328,8 @@ class DAUConv2d(base.Layer):
         self.dau_mu2 = None
         self.dau_sigma = None
 
+        self.dau_sigma_trainable = dau_sigma_trainable
+
         # show notice when using stride>1 that this is not implemented by CUDA code and is only emulating it (will have same computationa requirements as for stride=1)
         if self.strides > 1:
             tf.logging.warning('NOTICE: using stride>=2 in DAU convolution uses the same computational resources as with ' +
@@ -405,15 +408,21 @@ class DAUConv2d(base.Layer):
                                    constraint=self.mu2_constraint,
                                    trainable=True,
                                    dtype=self.dtype)
-    def add_dau_sigma_var(self, input_shape):
+    def add_dau_sigma_var(self, input_shape, trainable=False):
         dau_params_shape = self.get_dau_variable_shape(input_shape)
-        return self.add_variable(name='sigma',
-                                 shape=dau_params_shape,
-                                 initializer=self.sigma_initializer,
-                                 regularizer=self.sigma_regularizer,
-                                 constraint=self.sigma_constraint,
-                                 trainable=False,
-                                 dtype=self.dtype)
+
+        # create single sigma variable
+        sigma_var = self.add_variable(name='sigma',
+                                      shape=(1,),
+                                      initializer=self.sigma_initializer,
+                                      regularizer=self.sigma_regularizer,
+                                      constraint=self.sigma_constraint,
+                                      trainable=trainable,
+                                      dtype=self.dtype)
+
+        # but make variable shared across all channels as required for the efficient DAU implementation
+        return tf.tile(tf.reshape(sigma_var,[1,1,1,1]), multiples=dau_params_shape)
+
 
     def add_bias_var(self):
         return self.add_variable(name='bias',
@@ -442,7 +451,7 @@ class DAUConv2d(base.Layer):
         elif np.any(self.dau_mu2.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_mu2`')
         if self.dau_sigma is None:
-            self.dau_sigma = self.add_dau_sigma_var(input_shape)
+            self.dau_sigma = self.add_dau_sigma_var(input_shape, trainable=self.dau_sigma_trainable)
         elif np.any(self.dau_sigma.shape != dau_params_shape):
             raise ValueError('Shape mismatch for variable `dau_sigma`')
 
@@ -587,6 +596,7 @@ def dau_conv2d(inputs,
              biases_regularizer=None,
              biases_constraint=None,
              dau_unit_border_bound=0.01,
+             dau_sigma_trainable=False,
              reuse=None,
              variables_collections=None,
              outputs_collections=None,
@@ -642,6 +652,7 @@ def dau_conv2d(inputs,
                           sigma_constraint=sigma_constraint,
                           bias_constraint=biases_constraint,
                           dau_unit_border_bound=dau_unit_border_bound,
+                          dau_sigma_trainable=dau_sigma_trainable,
                           trainable=trainable,
                           unit_testing=False,
                           name=sc.name,
@@ -691,6 +702,7 @@ def dau_conv1d(inputs,
                biases_initializer=init_ops.zeros_initializer(),
                biases_regularizer=None,
                dau_unit_border_bound=0.01,
+               dau_sigma_trainable=False,
                dau_aggregation_forbid_positive_dim1=False,
                reuse=None,
                variables_collections=None,
@@ -739,6 +751,7 @@ def dau_conv1d(inputs,
                           bias_regularizer=biases_regularizer,
                           activity_regularizer=None,
                           dau_unit_border_bound=dau_unit_border_bound,
+                          dau_sigma_trainable=dau_sigma_trainable,
                           dau_aggregation_forbid_positive_dim1=dau_aggregation_forbid_positive_dim1,
                           trainable=trainable,
                           unit_testing=False,

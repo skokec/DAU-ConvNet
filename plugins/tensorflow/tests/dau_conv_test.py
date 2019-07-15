@@ -227,8 +227,8 @@ class DAUConvPython:
 
         sigma_val = sigma[0]
 
-        filter,deriv_w, deriv_mu1,deriv_mu2,_,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel,
-                                                                    aggr_forbid_positive=aggr_forbid_positive)
+        filter,deriv_w, deriv_mu1,deriv_mu2,deriv_sigma,_ = self._get_filters(sigma_val, single_dim_kernel=single_dim_kernel,
+                                                                              aggr_forbid_positive=aggr_forbid_positive)
 
 
         # next we need to get gradients wrt w,mu1,mu2
@@ -262,11 +262,23 @@ class DAUConvPython:
             # then offset and sum element-wise
             mu2_grad = self._offset_and_dot(x_mu2_blur,error,mu1,mu2, num_dau_units_ignore=num_dau_units_ignore, ignore_edge_gradients=unit_testing)
 
+        if True:
+            x_sigma_blur = np.zeros(x.shape,dtype=np.float32)
+            # pre-blur the X
+            for n in range(N):
+                for f in range(F):
+                    x_sigma_blur[n,f,:,:] = correlate(x[n,f,:,:],weights=deriv_sigma,mode='constant')
+
+            # then offset and sum element-wise
+            sigma_grad = self._offset_and_dot(x_sigma_blur,error,mu1,mu2, num_dau_units_ignore=num_dau_units_ignore, ignore_edge_gradients=unit_testing)
+
         # add multiplication with weight for mean gradients
         mu1_grad = np.multiply(mu1_grad, w)
         mu2_grad = np.multiply(mu2_grad, w)
+        sigma_grad = np.multiply(sigma_grad, w)
 
-        return (backprop_error, w_grad, mu1_grad, mu2_grad)
+
+        return (backprop_error, w_grad, mu1_grad, mu2_grad, sigma_grad)
 
 class DAUConvTest(unittest.TestCase):
 
@@ -340,7 +352,7 @@ class DAUConvTest(unittest.TestCase):
                                              np.int32(x.shape[2]),
                                              np.int32(x.shape[3])],dtype=tf.float32)
 
-            var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2], grad_ys=result_error)
+            var_grad = tf.gradients(result, [x, op.dau_weights, op.dau_mu1, op.dau_mu2, op.dau_sigma], grad_ys=result_error)
 
 
             init = tf.global_variables_initializer()
@@ -355,7 +367,7 @@ class DAUConvTest(unittest.TestCase):
                 s.run(init)
                 t_start = time.time()
 
-                r, r_error, r_grad, w, mu1, mu2  = s.run([result, result_error, var_grad, op.dau_weights, op.dau_mu1, op.dau_mu2], feed_dict = {x: x_rand})
+                r, r_error, r_grad, w, mu1, mu2 = s.run([result, result_error, var_grad, op.dau_weights, op.dau_mu1, op.dau_mu2], feed_dict = {x: x_rand})
 
                 t_end = time.time()
                 print(t_end-t_start)
@@ -375,7 +387,8 @@ class DAUConvTest(unittest.TestCase):
             gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:last_idx],
                            gt_bwd_vals[1],
                            gt_bwd_vals[2]* mu_learning_rate_factor,
-                           gt_bwd_vals[3]* mu_learning_rate_factor)
+                           gt_bwd_vals[3]* mu_learning_rate_factor,
+                           gt_bwd_vals[4])
 
             self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=plot_diff)
 
@@ -383,11 +396,12 @@ class DAUConvTest(unittest.TestCase):
             self._assertMatrix(r_grad[1], gt_bwd_vals[1], 'bwd_w_grad', rel_tolerance=0.01, plot_difference=plot_diff)
             self._assertMatrix(r_grad[2], gt_bwd_vals[2], 'bwd_mu1_grad', rel_tolerance=0.01, plot_difference=plot_diff)
             self._assertMatrix(r_grad[3], gt_bwd_vals[3], 'bwd_mu2_grad', rel_tolerance=0.01, plot_difference=plot_diff)
+            self._assertMatrix(r_grad[4], gt_bwd_vals[4], 'bwd_sigma_grad', rel_tolerance=0.01, plot_difference=plot_diff)
 
     def test_DAUConvQuick(self):
 
         # test spliting of the image at low N
-        self._run_DAUConv_forward_and_backward(repeat=1, N=2, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
+        self._run_DAUConv_forward_and_backward(repeat=1, N=2, W=65, H=8, S=33, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=1, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, plot_diff=False)
 
         # test small batch size
@@ -681,7 +695,8 @@ class DAUConvTest(unittest.TestCase):
             gt_bwd_vals = (gt_bwd_vals[0][:,:,:,:-2],
                            gt_bwd_vals[1],
                            gt_bwd_vals[2]* mu_learning_rate_factor,
-                           gt_bwd_vals[3]* mu_learning_rate_factor)
+                           gt_bwd_vals[3]* mu_learning_rate_factor,
+                           gt_bwd_vals[4])
 
             self._assertMatrix(r, gt_fwd_vals, 'fwd_output', rel_tolerance=0.01,plot_difference=plot_diff)
 
