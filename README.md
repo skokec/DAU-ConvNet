@@ -47,7 +47,7 @@ Requirements and dependency libraries for TensorFlow plugin:
  
 ## Instalation from pre-compiled binaries (pip)
 
-If you are using `TensorFlow` from pip, then install a pre-compiled binaries (.whl) from the [RELEASE](https://github.com/skokec/DAU-ConvNet/releases) page (mirror server also avialable http://box.vicos.si/skokec/dau-convnet):
+If you are using `TensorFlow` from pip, then install a pre-compiled binaries (.whl) from the [RELEASE](https://github.com/skokec/DAU-ConvNet/releases) page (mirror server also available http://box.vicos.si/skokec/dau-convnet):
 
 ```bash
 # install dependency library (OpenBLAS)
