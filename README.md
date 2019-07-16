@@ -47,18 +47,18 @@ Requirements and dependency libraries for TensorFlow plugin:
  
 ## Instalation from pre-compiled binaries (pip)
 
-If your are using `tensorflow` from pip, then pre-compiled binaries (.whl) for pip are avialable at [ftp://box.vicos.si/skokec/dau-convnet](ftp://box.vicos.si/skokec/dau-convnet) and can be installed using:
+If you are using `TensorFlow` from pip, then install a pre-compiled binaries (.whl) from the [RELEASE](https://github.com/skokec/DAU-ConvNet/releases/download/v1.0/dau_conv-1.0_TF1.10.0-cp27-cp27mu-manylinux1_x86_64.whl) page (mirror server also avialable http://box.vicos.si/skokec/dau-convnet):
 
 ```bash
 # install dependency library (OpenBLAS)
 sudo apt-get install libopenblas-dev  wget
 
 # install dau-conv package
-wget ftp://box.vicos.si/skokec/dau-convnet/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl
-sudo pip install dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl 
+export TF_VERSION=1.13.1
+sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35mu-manylinux1_x86_64.whl
 ```
 
-Note that pip packages were compiled againts the specific version of TensorFlow from pip and must be installed beforhand.
+Note that pip packages were compiled against the specific version of TensorFlow from pip, which must be installed beforhand.
 
 ## Docker 
 
