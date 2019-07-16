@@ -1,7 +1,7 @@
 # DAU-ConvNet #
-Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper titled "Spatially-Adaptive Filter Units for Deep Neural Networks" developed as part of [Deep Compositional Networks](http://www.vicos.si/Research/DeepCompositionalNet).
+Official implementation of Displaced Aggregation Units for Convolutional Networks from CVPR 2018 paper titled "Spatially-Adaptive Filter Units for Deep Neural Networks" that was developed as part of [Deep Compositional Networks](http://www.vicos.si/Research/DeepCompositionalNet).
 
-Self-contained DAU layer implementation (C++ and CUDA). Use this library to implement DAU layers in any deep learning frameworks. More details on DAUs are available on our [ViCoS research page](http://www.vicos.si/Research/DeepCompositionalNet) .
+This repository is a self-contained DAU layer implementation in C++ and CUDA, plus a TensorFlow plugin. Use this library to implement DAU layers for any deep learning framework. For more details on DAUs see [ViCoS research page](http://www.vicos.si/Research/DeepCompositionalNet).
 
 Available implementations :
  * TensorFlow
