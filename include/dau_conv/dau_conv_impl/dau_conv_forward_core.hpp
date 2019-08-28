@@ -2128,20 +2128,22 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
     out_prepared_filter_weights4[1] = reinterpret_cast<ELEMENT_FLOAT_TYPE*>(prepared_filter_offsets_and_weights);
 
     // prepare factors for interpolation
-
+    // but set value to zero if not using interpolation for appropriate corrners
     float4 interp_offset_y,interp_offset_x;
 
     // get x-floor(x)
-    if (NUM_READ_FEATURES > 0) interp_offset_x.x = offset_x.x - floorf(offset_x.x);
-    if (NUM_READ_FEATURES > 1) interp_offset_x.y = offset_x.y - floorf(offset_x.y);
-    if (NUM_READ_FEATURES > 2) interp_offset_x.z = offset_x.z - floorf(offset_x.z);
-    if (NUM_READ_FEATURES > 3) interp_offset_x.w = offset_x.w - floorf(offset_x.w);
+    if (NUM_READ_FEATURES > 0) interp_offset_x.x = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.x - floorf(offset_x.x) : 0;
+    if (NUM_READ_FEATURES > 1) interp_offset_x.y = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.y - floorf(offset_x.y) : 0;
+    if (NUM_READ_FEATURES > 2) interp_offset_x.z = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.z - floorf(offset_x.z) : 0;
+    if (NUM_READ_FEATURES > 3) interp_offset_x.w = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.w - floorf(offset_x.w) : 0;
 
     // get y-floor(y)
-    if (NUM_READ_FEATURES > 0) interp_offset_y.x = offset_y.x - floorf(offset_y.x);
-    if (NUM_READ_FEATURES > 1) interp_offset_y.y = offset_y.y - floorf(offset_y.y);
-    if (NUM_READ_FEATURES > 2) interp_offset_y.z = offset_y.z - floorf(offset_y.z);
-    if (NUM_READ_FEATURES > 3) interp_offset_y.w = offset_y.w - floorf(offset_y.w);
+    if (NUM_READ_FEATURES > 0) interp_offset_y.x = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.x - floorf(offset_y.x) : 0;
+    if (NUM_READ_FEATURES > 1) interp_offset_y.y = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.y - floorf(offset_y.y) : 0;
+    if (NUM_READ_FEATURES > 2) interp_offset_y.z = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.z - floorf(offset_y.z) : 0;
+    if (NUM_READ_FEATURES > 3) interp_offset_y.w = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.w - floorf(offset_y.w) : 0;
+
+
 
 
     float4 factor_00, factor_01, factor_10, factor_11;
@@ -2149,6 +2151,7 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
     // Instead of interpolation of data we perform interpolation on error to share data over several sub-features (w,mu1,mu2,sigma)
     // and reduce data loading.
     // To achieve interpolation of error we need to reverse the interpolation factors
+
     if (NUM_READ_FEATURES > 0) factor_11.x = interp_offset_x.x * interp_offset_y.x;
     if (NUM_READ_FEATURES > 1) factor_11.y = interp_offset_x.y * interp_offset_y.y;
     if (NUM_READ_FEATURES > 2) factor_11.z = interp_offset_x.z * interp_offset_y.z;
@@ -2184,21 +2187,23 @@ perpare_weights_and_offsets(const float* filter_weights, const float* filter_off
         if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_0[i] + 2] = w[2 * input_f_offset] * factor_00.z;
         if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_0[i] + 3] = w[3 * input_f_offset] * factor_00.w;
 
-        if (PIXELS_INTERPOLATION_SIZE == 4) {
+        if (PIXELS_INTERPOLATION_Dx == 2)  {
             // dx=1,dy=0
             int output_index_1 = output_index_0[i] + 1 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
             if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_1 + 0] = w[0 * input_f_offset] * factor_01.x;
             if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_1 + 1] = w[1 * input_f_offset] * factor_01.y;
             if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_1 + 2] = w[2 * input_f_offset] * factor_01.z;
             if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_1 + 3] = w[3 * input_f_offset] * factor_01.w;
-
+        }
+        if (PIXELS_INTERPOLATION_Dy == 2)  {
             // dx=0,dy=1
             int output_index_2 = output_index_0[i] + 2 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
             if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_2 + 0] = w[0 * input_f_offset] * factor_10.x;
             if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_2 + 1] = w[1 * input_f_offset] * factor_10.y;
             if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_2 + 2] = w[2 * input_f_offset] * factor_10.z;
             if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_2 + 3] = w[3 * input_f_offset] * factor_10.w;
-
+        }
+        if (PIXELS_INTERPOLATION_Dx == 2 && PIXELS_INTERPOLATION_Dy == 2)  {
             // dx=1,dy=1
             int output_index_3 = output_index_0[i] + 3 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
             if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(out_prepared_filter_weights4[i])[output_index_3 + 0] = w[0 * input_f_offset] * factor_11.x;
@@ -2578,13 +2583,22 @@ for (int jj = 0; jj < 1; ++jj) {
 	}
 #endif
 
+#ifdef DAU_ALLOW_INTERPOLATION_OFF
 #define RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS,  ...) \
 	if (USE_INTERPOLATION) { \
 		RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, true, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	} else { \
-		/*RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, BLOCK_IMAGES, false, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__)*/ \
-		throw DAUConvNet::DAUException(string_format("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n")); \
+		RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, false, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
 	}
+#else
+#define RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS,  ...) \
+	if (USE_INTERPOLATION) { \
+		RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, true, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
+	} else { \
+		throw DAUConvNet::DAUException(string_format("Not compiled with DAU_ALLOW_INTERPOLATION_OFF flag: support for non-interpolation disabled.\n")); \
+	}
+#endif
+
 #define RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, ...) \
 	if (IMG_PATCH_SIZE_H >= 64) { \
 		RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, 64, MAX_OFFSET, WARP_PIXELS_X, WARP_PIXELS_Y, BLOCK_IMAGES, USE_INTERPOLATION, SINGLE_FEATURE, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \

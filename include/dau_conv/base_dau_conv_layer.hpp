@@ -126,6 +126,7 @@ struct DAUConvSettings {
     float merge_threshold;
 
     bool offsets_already_centered;
+    bool use_interpolation;
 };
 
 template <typename Dtype>

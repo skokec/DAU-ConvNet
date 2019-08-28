@@ -1836,6 +1836,8 @@ namespace DAUConvNet {
         static const int BLOCK_SUBFEATURES = BlockIndexingT::BLOCK_SUBFEATURES;
         static const int BATCH_PIXELS_SIZE_X = BlockIndexingT::BATCH_PIXELS_SIZE_X;
         static const int BATCH_PIXELS_SIZE_Y = BlockIndexingT::BATCH_PIXELS_SIZE_Y;
+        static const int PIXELS_INTERPOLATION_Dx = BlockIndexingT::PIXELS_INTERPOLATION_Dx;
+        static const int PIXELS_INTERPOLATION_Dy = BlockIndexingT::PIXELS_INTERPOLATION_Dy;
         static const int BATCH_FEATURES_SIZE = BlockIndexingT::BATCH_FEATURES_SIZE;
         static const int BATCH_COMPUTE_FEATURES_SIZE = BlockIndexingT::BATCH_COMPUTE_FEATURES_SIZE;
         static const int BATCH_MEM_SUBFEATURES_SIZE = BlockIndexingT::BATCH_MEM_SUBFEATURES_SIZE;
@@ -1849,6 +1851,8 @@ namespace DAUConvNet {
         static const int BATCH_K_SIZE = BlockIndexingT::BATCH_K_SIZE;
 
         static const int NUM_REPLICATE_OFFSETED = 0;
+
+        static const int PIXELS_INTERPOLATION_SIZE = PIXELS_INTERPOLATION_Dx * PIXELS_INTERPOLATION_Dy;
 
         static const int NUM_READ_FEATURES =  BATCH_COMPUTE_FEATURES_SIZE >= 4 ? 4 :
                                               (BATCH_COMPUTE_FEATURES_SIZE >= 2 ? 2 : 1);
@@ -2034,16 +2038,16 @@ namespace DAUConvNet {
         float4 interp_offset_y,interp_offset_x;
 
         // get x-floor(x)
-        if (NUM_READ_FEATURES > 0) interp_offset_x.x = offset_x.x - floorf(offset_x.x);
-        if (NUM_READ_FEATURES > 1) interp_offset_x.y = offset_x.y - floorf(offset_x.y);
-        if (NUM_READ_FEATURES > 2) interp_offset_x.z = offset_x.z - floorf(offset_x.z);
-        if (NUM_READ_FEATURES > 3) interp_offset_x.w = offset_x.w - floorf(offset_x.w);
+        if (NUM_READ_FEATURES > 0) interp_offset_x.x = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.x - floorf(offset_x.x) : 0;
+        if (NUM_READ_FEATURES > 1) interp_offset_x.y = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.y - floorf(offset_x.y) : 0;
+        if (NUM_READ_FEATURES > 2) interp_offset_x.z = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.z - floorf(offset_x.z) : 0;
+        if (NUM_READ_FEATURES > 3) interp_offset_x.w = PIXELS_INTERPOLATION_Dx == 2 ? offset_x.w - floorf(offset_x.w) : 0;
 
         // get y-floor(y)
-        if (NUM_READ_FEATURES > 0) interp_offset_y.x = offset_y.x - floorf(offset_y.x);
-        if (NUM_READ_FEATURES > 1) interp_offset_y.y = offset_y.y - floorf(offset_y.y);
-        if (NUM_READ_FEATURES > 2) interp_offset_y.z = offset_y.z - floorf(offset_y.z);
-        if (NUM_READ_FEATURES > 3) interp_offset_y.w = offset_y.w - floorf(offset_y.w);
+        if (NUM_READ_FEATURES > 0) interp_offset_y.x = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.x - floorf(offset_y.x) : 0;
+        if (NUM_READ_FEATURES > 1) interp_offset_y.y = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.y - floorf(offset_y.y) : 0;
+        if (NUM_READ_FEATURES > 2) interp_offset_y.z = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.z - floorf(offset_y.z) : 0;
+        if (NUM_READ_FEATURES > 3) interp_offset_y.w = PIXELS_INTERPOLATION_Dy == 2 ? offset_y.w - floorf(offset_y.w) : 0;
 
 
         float4 factor_00, factor_01, factor_10, factor_11;
@@ -2084,26 +2088,30 @@ namespace DAUConvNet {
         if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_0 + 2] = w[2] * factor_00.z;
         if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_0 + 3] = w[3] * factor_00.w;
 
-        // dx=1,dy=0
-        int output_index_1 = output_index_0 + 1 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
-        if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 0] = w[0] * factor_01.x;
-        if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 1] = w[1] * factor_01.y;
-        if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 2] = w[2] * factor_01.z;
-        if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 3] = w[3] * factor_01.w;
-
-        // dx=0,dy=1
-        int output_index_2 = output_index_0 + 2 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
-        if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 0] = w[0] * factor_10.x;
-        if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 1] = w[1] * factor_10.y;
-        if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 2] = w[2] * factor_10.z;
-        if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 3] = w[3] * factor_10.w;
-
-        // dx=1,dy=1
-        int output_index_3 = output_index_0 + 3 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
-        if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 0] = w[0] * factor_11.x;
-        if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 1] = w[1] * factor_11.y;
-        if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 2] = w[2] * factor_11.z;
-        if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 3] = w[3] * factor_11.w;
+        if (PIXELS_INTERPOLATION_Dx == 2)  {
+            // dx=1,dy=0
+            int output_index_1 = output_index_0 + 1 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
+            if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 0] = w[0] * factor_01.x;
+            if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 1] = w[1] * factor_01.y;
+            if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 2] = w[2] * factor_01.z;
+            if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_1 + 3] = w[3] * factor_01.w;
+        }
+        if (PIXELS_INTERPOLATION_Dy == 2)  {
+            // dx=0,dy=1
+            int output_index_2 = output_index_0 + 2 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
+            if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 0] = w[0] * factor_10.x;
+            if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 1] = w[1] * factor_10.y;
+            if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 2] = w[2] * factor_10.z;
+            if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_2 + 3] = w[3] * factor_10.w;
+        }
+        if (PIXELS_INTERPOLATION_Dx == 2 && PIXELS_INTERPOLATION_Dy == 2 )  {
+            // dx=1,dy=1
+            int output_index_3 = output_index_0 + 3 *  (dim1_size * dim2_size) * NUM_READ_FEATURES;
+            if (NUM_READ_FEATURES > 0) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 0] = w[0] * factor_11.x;
+            if (NUM_READ_FEATURES > 1) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 1] = w[1] * factor_11.y;
+            if (NUM_READ_FEATURES > 2) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 2] = w[2] * factor_11.z;
+            if (NUM_READ_FEATURES > 3) reinterpret_cast<float*>(prepared_filter_weights4)[output_index_3 + 3] = w[3] * factor_11.w;
+        }
     }
 
 
@@ -2932,15 +2940,24 @@ namespace DAUConvNet {
         } \
     }
 #endif
+#ifdef DAU_ALLOW_INTERPOLATION_OFF
 
 #define RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, ...) \
     if (USE_INTERPOLATION) { \
         RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, true, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
     } else { \
-        /*RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, false, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__)*/ \
-		throw DAUConvNet::DAUException(string_format("Support for non-interpolation currently disabled. Non-interpolation has not been extensivly tested so disabling support.\n")); \
+        RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, false, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
     }
 
+#else
+#define RUN_KERNEL_R1(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, ...) \
+    if (USE_INTERPOLATION) { \
+        RUN_KERNEL_R0(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, true, SINGLE_SUBFEATURE, PARAMS, __VA_ARGS__) \
+    } else { \
+		throw DAUConvNet::DAUException(string_format("Not compiled with DAU_ALLOW_INTERPOLATION_OFF flag: support for non-interpolation disabled.\n")); \
+    }
+
+#endif
 
 #define RUN_KERNEL_R2(CLASS_NAME, IMG_PATCH_SIZE_W, IMG_PATCH_SIZE_H, MAX_OFFSET, NUM_K, BATCH_K_SIZE, WARP_PIXELS_X, WARP_PIXELS_Y, BATCH_IMAGES, USE_INTERPOLATION, SINGLE_SUBFEATURE, PARAMS, ...) \
 	if (MAX_OFFSET <= 9) { \

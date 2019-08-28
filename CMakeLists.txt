@@ -86,6 +86,7 @@ endif()
 dau_conv_option(BUILD_TENSORFLOW_PLUGIN "Builds TensorFlow plugin" OFF)
 dau_conv_option(BUILD_SHARED_LIBS "Build shared libraries" ON)
 dau_conv_option(USE_DUMMY_CUDA_IMPL "For debugging purpose; do not compile CUDA kernels (fast compile time)" OFF)
+dau_conv_option(ALLOW_INTERPOLATION_OFF "Build support for disabling interpolation in DAUs" OFF)
 
 # ---[ Dependencies
 include(cmake/Dependencies.cmake)
@@ -104,6 +105,9 @@ if(${USE_DUMMY_CUDA_IMPL})
   list(APPEND DAUConvNet_DEFINITIONS "-DDAU_USE_DUMMY_CUDA_IMPL")
 endif()
 
+if(${ALLOW_INTERPOLATION_OFF})
+  list(APPEND DAUConvNet_DEFINITIONS "-DDAU_ALLOW_INTERPOLATION_OFF")
+endif()
 
 # ---[ Warnings
 dau_conv_warnings_disable(CMAKE_CXX_FLAGS -Wno-sign-compare -Wno-uninitialized)

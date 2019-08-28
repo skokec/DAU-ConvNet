@@ -182,7 +182,7 @@ void BaseDAUConvLayer<Dtype>::LayerSetUp(const DAUConvSettings& settings,
     caffe_gpu_set_async(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_w_/2) : 0), aggregation.param->mu1(), stream_);
     caffe_gpu_set_async(1, (Dtype)(this->offsets_already_centered_ == false ? (int)(aggregation.kernel_h_/2) : 0), aggregation.param->mu2(), stream_);
 
-    this->use_interpolation_ = true;
+    this->use_interpolation_ = settings.use_interpolation;
 
 }
 

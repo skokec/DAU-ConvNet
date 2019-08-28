@@ -134,6 +134,7 @@ class _DAUConvolution2d(object):
             dau_unit_sigma_bound=0.01,
             dau_unit_single_dim=False,
             dau_aggregation_forbid_positive_dim1=False,
+            dau_mu_interpolation=True,
             unit_testing=False,
             name=None):
         self.num_output = num_output
@@ -147,6 +148,7 @@ class _DAUConvolution2d(object):
         self.dau_unit_sigma_bound = dau_unit_sigma_bound
         self.dau_unit_single_dim = dau_unit_single_dim
         self.dau_aggregation_forbid_positive_dim1 = dau_aggregation_forbid_positive_dim1
+        self.dau_mu_interpolation = dau_mu_interpolation
         self.unit_testing = unit_testing
         input_shape = input_shape
         if input_shape.ndims is None:
@@ -205,6 +207,7 @@ class _DAUConvolution2d(object):
                         mu_learning_rate_factor=self.mu_learning_rate_factor,
                         single_dim_kernel=self.dau_unit_single_dim,
                         forbid_positive_dim1=self.dau_aggregation_forbid_positive_dim1,
+                        use_interpolation=self.dau_mu_interpolation,
                         unit_testing=self.unit_testing)
         return self.dau_conv_op(
             input=inp,
@@ -249,7 +252,8 @@ class DAUConv2d(base.Layer):
                  dau_unit_single_dim=False,
                  dau_aggregation_forbid_positive_dim1=False,
                  dau_sigma_trainable=False,
-                 unit_testing=False, # for competability between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
+                 dau_mu_interpolation=True,
+                 unit_testing=False, # for compatibility between CPU and GPU version (where gradients of last edge need to be ignored) during unit testing
                  name=None,
                  **kwargs):
         super(DAUConv2d, self).__init__(trainable=trainable, name=name,
@@ -301,6 +305,8 @@ class DAUConv2d(base.Layer):
         self.dau_unit_border_bound = dau_unit_border_bound
         self.num_dau_units_all = np.int32(np.prod(self.dau_units))
         self.num_dau_units_ignore = 0
+
+        self.dau_mu_interpolation = dau_mu_interpolation
 
         self.dau_unit_single_dim = dau_unit_single_dim
         self.dau_aggregation_forbid_positive_dim1=dau_aggregation_forbid_positive_dim1
@@ -478,6 +484,7 @@ class DAUConv2d(base.Layer):
             dau_unit_border_bound=self.dau_unit_border_bound,
             dau_unit_single_dim=self.dau_unit_single_dim,
             dau_aggregation_forbid_positive_dim1=self.dau_aggregation_forbid_positive_dim1,
+            dau_mu_interpolation=self.dau_mu_interpolation,
             unit_testing=self.unit_testing,
             data_format=utils.convert_data_format(self.data_format,
                                                   self.rank + 2))
@@ -597,6 +604,7 @@ def dau_conv2d(inputs,
              biases_constraint=None,
              dau_unit_border_bound=0.01,
              dau_sigma_trainable=False,
+             dau_mu_interpolation=True,
              reuse=None,
              variables_collections=None,
              outputs_collections=None,
@@ -653,6 +661,7 @@ def dau_conv2d(inputs,
                           bias_constraint=biases_constraint,
                           dau_unit_border_bound=dau_unit_border_bound,
                           dau_sigma_trainable=dau_sigma_trainable,
+                          dau_mu_interpolation=dau_mu_interpolation,
                           trainable=trainable,
                           unit_testing=False,
                           name=sc.name,
@@ -704,6 +713,7 @@ def dau_conv1d(inputs,
                dau_unit_border_bound=0.01,
                dau_sigma_trainable=False,
                dau_aggregation_forbid_positive_dim1=False,
+               dau_mu_interpolation=True,
                reuse=None,
                variables_collections=None,
                outputs_collections=None,
@@ -753,6 +763,7 @@ def dau_conv1d(inputs,
                           dau_unit_border_bound=dau_unit_border_bound,
                           dau_sigma_trainable=dau_sigma_trainable,
                           dau_aggregation_forbid_positive_dim1=dau_aggregation_forbid_positive_dim1,
+                          dau_mu_interpolation=dau_mu_interpolation,
                           trainable=trainable,
                           unit_testing=False,
                           name=sc.name,

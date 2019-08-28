@@ -45,7 +45,8 @@ REGISTER_OP("DAUConvGrad")
         .Attr("unit_testing: bool = false")
         .Attr("mu_learning_rate_factor: float = 1.0")
         .Attr("single_dim_kernel: bool = false")
-        .Attr("forbid_positive_dim1: bool = false");
+        .Attr("forbid_positive_dim1: bool = false")
+        .Attr("use_interpolation: bool = true");
 //TODO ADD SETTING INITIALIZATION FROM ATTRIBUTES
 template<typename Device, typename Dtype>
 class DAUConvGradOp : public OpKernel {
@@ -66,6 +67,7 @@ public:
         float sigma_lower_bound;
         int merge_iteration_step;
         int merge_threshold;
+        bool use_interpolation;
         OP_REQUIRES_OK(context, context->GetAttr("number_units_x", &number_units_x));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_y", &number_units_y));
         OP_REQUIRES_OK(context, context->GetAttr("number_units_ignore", &this->number_units_ignore));
@@ -85,6 +87,7 @@ public:
         OP_REQUIRES_OK(context, context->GetAttr("mu_learning_rate_factor", &this->mu_learning_rate_factor));
         OP_REQUIRES_OK(context, context->GetAttr("single_dim_kernel", &this->single_dim_kernel));
         OP_REQUIRES_OK(context, context->GetAttr("forbid_positive_dim1", &this->forbid_positive_dim1));
+        OP_REQUIRES_OK(context, context->GetAttr("use_interpolation", &use_interpolation));
         dau_conv_settings.offsets_already_centered = true;
         dau_conv_settings.num_output = num_output;
         //num units per X and per Y
@@ -102,6 +105,7 @@ public:
         dau_conv_settings.sigma_lower_bound = sigma_lower_bound;
         dau_conv_settings.merge_iteration_step = merge_iteration_step;
         dau_conv_settings.merge_threshold = merge_threshold;
+        dau_conv_settings.use_interpolation = use_interpolation;
 
         //cublasCreate(&cublas_handle);
     }
