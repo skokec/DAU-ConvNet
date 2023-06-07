@@ -466,36 +466,36 @@ class DAUConvTest(unittest.TestCase):
 
     def test_DAUConvInterpolation(self):
 
-        print 'test spliting of the image at low N ########################################################################################################'
+        print('test spliting of the image at low N ########################################################################################################')
         # test spliting of the image at low N
         self._run_DAUConv_forward_and_backward(repeat=1, N=2, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=1, W=65, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
 
-        print 'test small batch size ########################################################################################################'
+        print('test small batch size ########################################################################################################')
         # test small batch size
         self._run_DAUConv_forward_and_backward(repeat=1, N=1, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=2, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=4, W=8, H=8, S=32, F=32, dau_uints=(1,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
 
-        print 'test small kernels (9 and 17) ########################################################################################################'
+        print('test small kernels (9 and 17) ########################################################################################################')
         # test small kernels (9 and 17)
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=9, max_offset_init=3, use_interpolation= False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=6, use_interpolation= False)
 
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=6, H=6, S=64, F=256, dau_uints=(2,1), max_kernel_size=17, max_offset_init=8, use_interpolation= False)
 
-        print 'test with dynamic kernel size optimization ########################################################################################################'
+        print('test with dynamic kernel size optimization ########################################################################################################')
         # test with dynamic kernel size optimization (using smaller kernel dispite large allowed kernel)
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=32, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3, use_interpolation= False)
 
-        print 'test with uneven number of sub-features ########################################################################################################'
+        print('test with uneven number of sub-features ########################################################################################################')
         # test with uneven number of sub-features
         #self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=32, H=32, S=3, F=32, dau_uints=(2,2), max_kernel_size=17, max_offset_init=3, use_interpolation= False)
-        print 'test1 with uneven number of sub-features ########################################################################################################'
+        print('test1 with uneven number of sub-features ########################################################################################################')
 
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=64, H=64, S=16, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10, use_interpolation= False)
 
-        print 'test large kernels (33 and 65) ########################################################################################################'
+        print('test large kernels (33 and 65) ########################################################################################################')
         # test large kernels (33 and 65)
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=33, max_offset_init=10, use_interpolation= False)
         self._run_DAUConv_forward_and_backward(repeat=1, N=16, W=64, H=64, S=32, F=32, dau_uints=(2,2), max_kernel_size=65, max_offset_init=20, use_interpolation= False)

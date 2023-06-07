@@ -15,13 +15,30 @@ MESSAGE(STATUS "Python exec ${PYTHON_EXECUTABLE}")
 #get TF VERSION
 execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.__version__)" OUTPUT_VARIABLE TF_VERSION)
 
-if( ${TF_VERSION} VERSION_LESS "1.5.0")
+if( ${TF_VERSION} VERSION_GREATER "2.0.0")
+    MESSAGE(STATUS "TF VER MORE THAN 2.0.0: ${TF_VERSION}")
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_compile_flags()))" OUTPUT_VARIABLE TF_CFLAGS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_link_flags()))" OUTPUT_VARIABLE TF_LFLAGS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so.2')" OUTPUT_VARIABLE TF_LIB)
+    MESSAGE(STATUS "${TF_LIB_DIR}")
+
+elseif( ${TF_VERSION} VERSION_GREATER "1.13.1")
+    MESSAGE(STATUS "TF VER BETWEEN THAN 1.14 and 1.15: ${TF_VERSION}")
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_compile_flags()))" OUTPUT_VARIABLE TF_CFLAGS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_link_flags()))" OUTPUT_VARIABLE TF_LFLAGS)
+    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so.1')" OUTPUT_VARIABLE TF_LIB)
+    MESSAGE(STATUS "${TF_LIB_DIR}")
+
+elseif( ${TF_VERSION} VERSION_LESS "1.5.0")
     MESSAGE(STATUS "TF VER LOWER THAN 1.5.: ${TF_VERSION}")
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so')" OUTPUT_VARIABLE TF_LIB)
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib())" OUTPUT_VARIABLE TF_LIB_DIR)
     set(TF_CFLAGS "-I ${Tensorflow_INCLUDE_DIRS} -D_GLIBCXX_USE_CXX11_ABI=0")
     set(TF_LFLAGS "-L ${TF_LIB_DIR} -ltensorflow_framework")
+    
 else()
     MESSAGE(STATUS "TF VER: ${TF_VERSION}")
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
@@ -139,4 +156,4 @@ add_custom_command(OUTPUT ${WHEELHOUSE}
 
 add_custom_target(target ALL DEPENDS ${WHEELHOUSE} dau_conv_tensorflow dau_conv_op dau_conv_grad_op)
 
-install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} -m pip install --find-links=${WHEELHOUSE} --force-reinstall --no-deps ${DAU_CONV_MODULE_NAME}==${PACKAGE_VERSION}.TF${TF_VERSION})")
+install(CODE "execute_process(COMMAND ${PYTHON_EXECUTABLE} -m pip install --find-links=${WHEELHOUSE} --force-reinstall --no-deps ${DAU_CONV_MODULE_NAME}==${PACKAGE_VERSION}.${TF_VERSION})")
