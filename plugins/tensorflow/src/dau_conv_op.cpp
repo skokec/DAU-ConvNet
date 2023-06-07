@@ -210,7 +210,6 @@ public:
         try {
             // get Tensorflow stream
             auto* stream = context->op_device_context()->stream();
-            context->op_device_context()->
             // obtain original CUDA's stream id from tensorflow stream
             CUstream default_tf_cuda_stream = reinterpret_cast<CUstream>(stream->implementation()->GpuStreamHack());
 
