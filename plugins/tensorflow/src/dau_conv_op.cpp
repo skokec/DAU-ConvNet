@@ -5,7 +5,6 @@
 
 #include "tensorflow/stream_executor/stream.h"
 #include "tensorflow/stream_executor/stream_executor_internal.h"
-#include "tensorflow/stream_executor/cuda/cuda_stream.h"
 
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
@@ -211,8 +210,9 @@ public:
         try {
             // get Tensorflow stream
             auto* stream = context->op_device_context()->stream();
+            context->op_device_context()->
             // obtain original CUDA's stream id from tensorflow stream
-            CUstream default_tf_cuda_stream = perftools::gputools::cuda::AsCUDAStreamValue(stream);
+            CUstream default_tf_cuda_stream = reinterpret_cast<CUstream>(stream->implementation()->GpuStreamHack());
 
             // since we cannot get cublas handle from tensorflow we need to create one
             CUBLAS_CHECK(cublasCreate(&cublas_handle));

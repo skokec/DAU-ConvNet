@@ -1,7 +1,7 @@
 from distutils.core import setup
 
 setup(name='dau_conv',
-      version='${PACKAGE_VERSION}-TF${TF_VERSION}',
+      version='${PACKAGE_VERSION}.${TF_VERSION}',
       description='DAU-ConvNet (Displaced Aggregation Units) package for TensorFlow',
       url="https://https://github.com/skokec/DAU-ConvNet",
       author="Domen Tabernik",
