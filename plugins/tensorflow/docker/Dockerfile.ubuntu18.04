@@ -67,7 +67,9 @@ ENV PATH /opt/cmake-3.21.3/bin:$PATH
 WORKDIR $DAU_CONVNET_HOME
 
 # Download and build DAU-ConvNet plugin
-ADD data.tar.gz $DAU_CONVNET_HOME
+RUN git clone --depth=1 --branch=TF1.15.5 https://github.com/skokec/DAU-ConvNet . &&  \
+    git submodule update --init --recursive
+
 
 RUN mkdir build && cd build && \
     cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/$PYTHON" $DAU_CMAKE_FLAGS .. && \
