@@ -5,7 +5,14 @@ import unittest
 
 import numpy as np
 import pylab as plt
-import tensorflow as tf
+import tensorflow
+
+if tensorflow.__version__.startswith('1'):
+        import tensorflow as tf
+else:
+        import tensorflow.compat.v1 as tf
+        tf.disable_v2_behavior()
+
 from dau_conv import DAUConv2d, DAUConv1d
 from scipy.ndimage.filters import correlate
 

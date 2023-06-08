@@ -3,7 +3,14 @@
 import unittest
 import time
 import numpy as np
-import tensorflow as tf
+import tensorflow
+
+if tensorflow.__version__.startswith('2'):
+        import tensorflow.compat.v1 as tf
+        tf.disable_v2_behavior()
+else:
+        import tensorflow as tf
+
 import _base_op_grad
 base_op_module = tf.load_op_library('../../cmake-build-debug/plugins/tensorflow/libbase_op.so')
 #base_op_module = tf.load_op_library('./bin/libbase_op.so')
