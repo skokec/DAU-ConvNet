@@ -114,7 +114,7 @@ apt-get install python-tk
                 
 pip install scipy matplotlib
 
-python DAU-ConvNet/plugins/tensorflow/tests/dau_conv_test.py DAUConvTest.test_DAUConvQuick
+python -m dau_conv.test DAUConvTest.test_DAUConv
 ```
 
 ### Common issues ###
