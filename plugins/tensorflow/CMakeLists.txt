@@ -47,8 +47,13 @@ else()
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so')" OUTPUT_VARIABLE TF_LIB)
 endif()
 
+# NO need to explicitly add -std=c++11 since main CMakeLists.txt already does that
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+if( ${TF_VERSION} VERSION_GREATER "2.6.0" AND NOT COMPILER_SUPPORTS_CXX14)
+    message(FATAL_ERROR "TF v2.7.0 or higher requires C++14 support. Please use a different C++ compiler.")
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D GOOGLE_CUDA=1")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TF_CFLAGS}")
