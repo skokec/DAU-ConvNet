@@ -1,23 +1,12 @@
 ARG BASE_CUDA_VERSION=nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04
-FROM $BASE_CUDA_VERSION
+FROM $BASE_CUDA_VERSION as dau-base
 
 LABEL maintainer "domen.tabernik@fri.uni-lj.si"
 
 ARG DAU_CMAKE_FLAGS=""
 
-# TF/PY version argument must be after FROM statement
-ARG TF_VER=1.15.5
-ARG PY_VER=3.7
-ARG PY_VER_MAJOR=3
-
-ENV PYTHON "python$PY_VER"
-ENV PYTHON_MAJOR "python$PY_VER_MAJOR"
-
 ENV LD_LIBRARY_PATH "/usr/local/nvidia/lib:/usr/local/nvidia/lib64"
 ENV DAU_CONVNET_HOME /opt/dau-convnet
-
-RUN echo "Using TensorFlow==$TF_VER"
-RUN echo "Using python binary path=$PYTHON"
 
 # Install general packages for building 
 RUN apt-get update && \
@@ -39,47 +28,69 @@ RUN apt-get update && \
                 unzip \
                 zip \
                 zlib1g-dev \
-	            libopenblas-dev 
+	            libopenblas-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+######################################################################
+# TF/PY version argument must be after FROM statement
+ARG PY_VER=3.7
+ARG PY_VER_MAJOR=3
+
+ENV PYTHON "python$PY_VER"
+ENV PYTHON_MAJOR "python$PY_VER_MAJOR"
 
 # Install specific python and tensorflow versions  
-RUN apt-get install -y $PYTHON \
+RUN apt-get update && \ 
+    apt-get install -y $PYTHON \
                        $PYTHON-dev \
                        $PYTHON_MAJOR-pip && \
-    apt-get clean
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-#RUN update-alternatives --install /usr/bin/python python /usr/bin/$PYTHON 1
+######################################################################
 
-RUN $PYTHON -m pip install setuptools==57.5.0 && \
+RUN $PYTHON -m pip --no-cache-dir install setuptools==57.5.0 && \
     $PYTHON -m pip --no-cache-dir install cython numpy==1.19.5 pathlib protobuf==3.20
-RUN $PYTHON -m pip install pip --upgrade
-RUN $PYTHON -m pip install tensorflow==$TF_VER
+RUN $PYTHON -m pip --no-cache-dir install pip --upgrade
 
-# NOTE: since docker build does not provide nvidia drivers we cannot run "import tensorflow"
-# using tensorflow-gpu so we only use CPU tensorflow during build-time and then install 
-# tensorflow-gpu after DAU-ConvNet is compiled
+ARG TF_VER=1.15.5
+RUN $PYTHON -m pip --no-cache-dir install tensorflow==$TF_VER
 
+FROM dau-base as dau-build
+
+######################################################################
 WORKDIR /tmp
 
 # install latest CMAKE 
 RUN wget https://cmake.org/files/v3.21/cmake-3.21.3-linux-x86_64.tar.gz && tar -xzvf cmake-3.21.3-linux-x86_64.tar.gz &&  mv cmake-3.21.3-linux-x86_64 /opt/cmake-3.21.3
 ENV PATH /opt/cmake-3.21.3/bin:$PATH
 
+######################################################################
+
+# NOTE: since docker build does not provide nvidia drivers we cannot run "import tensorflow"
+# using tensorflow-gpu so we only use CPU tensorflow during build-time and then install 
+# tensorflow-gpu after DAU-ConvNet is compiled
+
 WORKDIR $DAU_CONVNET_HOME
 
 # Download and build DAU-ConvNet plugin
-RUN git clone --depth=1 --branch=TF1.15.5 https://github.com/skokec/DAU-ConvNet . &&  \
-    git submodule update --init --recursive
-
+#RUN git clone --depth=1 --branch=TF1.15.5 https://github.com/skokec/DAU-ConvNet . &&  \
+#    git submodule update --init --recursive
+ADD data.tar.gz ${DAU_CONVNET_HOME}
 
 RUN mkdir build && cd build && \
     cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/$PYTHON" $DAU_CMAKE_FLAGS .. && \
     make -j install
 
-# We need to install back GPU support for tensorflow 
-RUN $PYTHON -m pip install tensorflow-gpu==$TF_VER
+FROM dau-base as dau-ConvNet
+
+# Copy DAU-ConvNet whl from build stage
+COPY --from=dau-build ${DAU_CONVNET_HOME}/build/plugins/tensorflow/wheelhouse/*.whl /opt/dau-convnet.whl
+
+# install DAU-ConvNet whl which will also install tensorflow-gpu
+RUN $PYTHON -m pip install --no-cache-dir /opt/dau-convnet.whl
 
 # Install two scripts that will verify integrity of build with tests
 COPY verify_dau_import.py /opt/verify_dau_import.py
 COPY test_dau.sh /opt/test_dau.sh
-
-
