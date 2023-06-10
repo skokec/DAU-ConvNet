@@ -14,8 +14,10 @@ MESSAGE(STATUS "Python exec ${PYTHON_EXECUTABLE}")
 
 #get TF VERSION
 execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.__version__)" OUTPUT_VARIABLE TF_VERSION)
+convert_version_string_to_int("${TF_VERSION}" TF_VERSION_INT)
+message(STATUS "TF_VERSION_INT: ${TF_VERSION_INT}") 
 
-if( ${TF_VERSION} VERSION_GREATER "2.0.0")
+if( "${TF_VERSION}" VERSION_GREATER "2.0.0" OR "${TF_VERSION}" VERSION_EQUAL "2.0.0")
     MESSAGE(STATUS "TF VER MORE THAN 2.0.0: ${TF_VERSION}")
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_compile_flags()))" OUTPUT_VARIABLE TF_CFLAGS)
@@ -23,7 +25,7 @@ if( ${TF_VERSION} VERSION_GREATER "2.0.0")
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so.2')" OUTPUT_VARIABLE TF_LIB)
     MESSAGE(STATUS "${TF_LIB_DIR}")
 
-elseif( ${TF_VERSION} VERSION_GREATER "1.13.1")
+elseif( "${TF_VERSION}" VERSION_GREATER "1.14.0" OR "${TF_VERSION}" VERSION_EQUAL "1.14.0")
     MESSAGE(STATUS "TF VER BETWEEN THAN 1.14 and 1.15: ${TF_VERSION}")
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow; import sys; sys.stdout.write(tensorflow.sysconfig.get_include())" OUTPUT_VARIABLE Tensorflow_INCLUDE_DIRS)
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(' '.join(tf.sysconfig.get_compile_flags()))" OUTPUT_VARIABLE TF_CFLAGS)
@@ -47,14 +49,23 @@ else()
     execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import tensorflow as tf; import sys; sys.stdout.write(tf.sysconfig.get_lib()+'/libtensorflow_framework.so')" OUTPUT_VARIABLE TF_LIB)
 endif()
 
+
 # NO need to explicitly add -std=c++11 since main CMakeLists.txt already does that
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-if( ${TF_VERSION} VERSION_GREATER "2.6.0" AND NOT COMPILER_SUPPORTS_CXX14)
+if(( "${TF_VERSION}" VERSION_GREATER "2.7.0" OR "${TF_VERSION}" VERSION_EQUAL "2.7.0")  AND NOT COMPILER_SUPPORTS_CXX14)
     message(FATAL_ERROR "TF v2.7.0 or higher requires C++14 support. Please use a different C++ compiler.")
+elseif( "${TF_VERSION}" VERSION_GREATER "2.10.0" OR "${TF_VERSION}" VERSION_EQUAL "2.10.0")
+   if(COMPILER_SUPPORTS_CXX17)
+     message(STATUS "Enabling C++17 support for TF v2.10.0 or higher.")
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+   else()
+     message(FATAL_ERROR "TF v2.10.0 or higher requires C++17 support. Please use a different C++ compiler.")
+   endif()
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D GOOGLE_CUDA=1")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D TENSORFLOW_VERSION=${TF_VERSION_INT}")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TF_CFLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${TF_LFLAGS}")
@@ -149,6 +160,14 @@ message(STATUS ${WHEELHOUSE})
 
 set(MANIFEST_IN "${CMAKE_CURRENT_SOURCE_DIR}/MANIFEST.in.in")
 set(MANIFEST    "${CMAKE_CURRENT_BINARY_DIR}/MANIFEST.in")
+
+# for TF v2.1 or higher there is no more tensorflow-gpu package
+if( "${TF_VERSION}" VERSION_GREATER "2.1.0" OR "${TF_VERSION}" VERSION_EQUAL "2.1.0")
+    set(TENSORFLOW_PIP_PACKAGE_NAME "tensorflow==${TF_VERSION}")
+else()
+    set(TENSORFLOW_PIP_PACKAGE_NAME "tensorflow-gpu==${TF_VERSION}")
+endif()
+
 
 configure_file(${MANIFEST_IN} ${MANIFEST})
 configure_file(${SETUP_PY_IN} ${SETUP_PY})

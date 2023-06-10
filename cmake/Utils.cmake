@@ -144,3 +144,23 @@ function(dau_conv_detect_darwin_version output_var)
     set(${output_var} "" PARENT_SCOPE)
   endif()
 endfunction()
+
+################################################################################################
+# Helper function to convert version string to integer
+function(convert_version_string_to_int version_string version_int)
+    # Split the version string into its components
+    string(REPLACE "." ";" version_list ${version_string})
+    
+    list(GET version_list 0 major)
+    list(GET version_list 1 minor)
+    list(GET version_list 2 patch)
+
+    # Convert the version components to integers
+    math(EXPR major_int "${major}*1000")
+    math(EXPR minor_int "${minor}*10")
+    set(patch_int ${patch})
+    
+    # Combine the version components into a single integer
+    math(EXPR ret "${major_int}+${minor_int}+${patch_int}" )
+    set(${version_int} ${ret} PARENT_SCOPE)
+endfunction()

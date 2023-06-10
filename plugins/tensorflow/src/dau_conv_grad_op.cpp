@@ -1,8 +1,7 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
-#include "tensorflow/stream_executor/stream.h"
-#include "tensorflow/stream_executor/stream_executor_internal.h"
+#include "tensorflow/core/platform/stream_executor.h"
 
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"

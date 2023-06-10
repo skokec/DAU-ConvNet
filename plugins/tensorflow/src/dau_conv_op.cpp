@@ -1,10 +1,9 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor_shape.h"
 #include "tensorflow/core/framework/shape_inference.h"
-#include "tensorflow/core/platform/default/logging.h"
+#include "tensorflow/core/platform/logging.h"
 
-#include "tensorflow/stream_executor/stream.h"
-#include "tensorflow/stream_executor/stream_executor_internal.h"
+#include "tensorflow/core/platform/stream_executor.h"
 
 #include "dau_conv/base_dau_conv_layer.hpp"
 #include "dau_conv_layer_tensorflow.hpp"
@@ -79,7 +78,13 @@ shape_inference::ShapeHandle output_shape;
   TF_RETURN_IF_ERROR(c->ReplaceDim(input_shape, 1, output_rows, &output_shape));
 
   c->set_output(0, output_shape);
-  return Status::OK();
+  
+// Status::OK() was replaced with tensorflow::OkStatus() since TF v2.10.0
+#if defined(TENSORFLOW_VERSION) && TENSORFLOW_VERSION >= 2100
+    return tensorflow::OkStatus();
+#else
+    return Status::OK();
+#endif
 });
 
 template <typename Device, typename Dtype>

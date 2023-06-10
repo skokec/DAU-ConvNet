@@ -54,17 +54,20 @@ RUN $PYTHON -m pip --no-cache-dir install setuptools==57.5.0 && \
     $PYTHON -m pip --no-cache-dir install cython numpy==1.19.5 pathlib protobuf==3.20
 RUN $PYTHON -m pip --no-cache-dir install pip --upgrade
 
-ARG TF_VER=1.15.5
-RUN $PYTHON -m pip --no-cache-dir install tensorflow==$TF_VER
+######################################################################
 
 FROM dau-base as dau-build
 
-######################################################################
 WORKDIR /tmp
 
 # install latest CMAKE 
-RUN wget https://cmake.org/files/v3.21/cmake-3.21.3-linux-x86_64.tar.gz && tar -xzvf cmake-3.21.3-linux-x86_64.tar.gz &&  mv cmake-3.21.3-linux-x86_64 /opt/cmake-3.21.3
+RUN wget -q https://cmake.org/files/v3.21/cmake-3.21.3-linux-x86_64.tar.gz -O - | tar -xz -C /opt && mv /opt/cmake-3.21.3-linux-x86_64 /opt/cmake-3.21.3
 ENV PATH /opt/cmake-3.21.3/bin:$PATH
+
+######################################################################
+
+ARG TF_VER=1.15.5
+RUN $PYTHON -m pip --no-cache-dir install tensorflow==$TF_VER
 
 ######################################################################
 
@@ -83,13 +86,13 @@ RUN mkdir build && cd build && \
     cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/$PYTHON" $DAU_CMAKE_FLAGS .. && \
     make -j install
 
-FROM dau-base as dau-ConvNet
+FROM dau-base as dau-convnet
 
 # Copy DAU-ConvNet whl from build stage
-COPY --from=dau-build ${DAU_CONVNET_HOME}/build/plugins/tensorflow/wheelhouse/*.whl /opt/dau-convnet.whl
+COPY --from=dau-build ${DAU_CONVNET_HOME}/build/plugins/tensorflow/wheelhouse/*.whl /opt/.
 
 # install DAU-ConvNet whl which will also install tensorflow-gpu
-RUN $PYTHON -m pip install --no-cache-dir /opt/dau-convnet.whl
+RUN $PYTHON -m pip install --no-cache-dir /opt/*.whl
 
 # Install two scripts that will verify integrity of build with tests
 COPY verify_dau_import.py /opt/verify_dau_import.py

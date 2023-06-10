@@ -5,7 +5,7 @@
 #include "dau_conv/util/common.hpp"
 #include "dau_conv/util/math_functions.hpp"
 
-#include <cub/cub/cub.cuh>
+#include <cub/cub.cuh>
 
 namespace DAUConvNet {
 

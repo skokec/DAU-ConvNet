@@ -29,9 +29,11 @@ include(cmake/ConfigGen.cmake)
 # ---[ Using C++11
 
 include(CheckCXXCompilerFlag)
+CHECK_CXX_COMPILER_FLAG("-std=c++17" COMPILER_SUPPORTS_CXX17)
 CHECK_CXX_COMPILER_FLAG("-std=c++14" COMPILER_SUPPORTS_CXX14)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
 CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
+
 if(COMPILER_SUPPORTS_CXX14)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 elseif(COMPILER_SUPPORTS_CXX11)
@@ -130,6 +132,12 @@ include_directories(${PROJECT_BINARY_DIR})
 #
 # list(REMOVE_ITEM ...) invocations remove PRIVATE and PUBLIC keywords from collected definitions and include pathes
 if(HAVE_CUDA)
+  # Add includes to CUB only for CUDA lower than 11.8 which does not provide CUB
+  if("${CUDA_VERSION}" VERSION_LESS "11.8")
+    message(STATUS "CUDA_VERSION (${CUDA_VERSION}) is less than 11.8, adding CUB to include pathes")
+    list(APPEND DAUConvNet_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/include/cub)
+  endif()
+
   # pass include pathes to cuda_include_directories()
   set(DAUConvNet_ALL_INCLUDE_DIRS ${DAUConvNet_INCLUDE_DIRS})
   list(REMOVE_ITEM DAUConvNet_ALL_INCLUDE_DIRS PRIVATE PUBLIC)
