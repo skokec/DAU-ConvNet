@@ -10,27 +10,50 @@
 #
 #  2. After all images are build it performs the following tests:
 #    - integirety check by running "import dau_conv" within container
-#    - quick unit test by running test "python tests/dau_conv_test.py DAUConvTest.test_DAUConvQuick
+#    - quick unit test by running test "python -m dau_conv.test DAUConvTest.test_DAUConv
 #
 #  3. Wheel packages (.whl) are stored to the same location of this script.
 
+# Define a function to stop all parent processes and exit the script
+function stop_script {
+  echo "Stopping all parent processes and exiting script..."
+  pkill -P $$
+  exit 1
+}
+
+# Catch the SIGINT signal (CTRL+C) and execute the stop_script function
+trap stop_script SIGINT
+
+# Rest of the script goes here...
+
 #DOCKER_EXEC=nvidia-docker
 DOCKER_EXEC=docker
+DOCKER_GPUS=--gpus=all
 
 DAU_VERSION=1.0
 DOCKER_IMG_NAME=dau-convnet
 UNITTEST_DOCKER=0
 DOCKER_HUB_REPO=""
 
-# python build numbers
-PYTHON_BUILDS=(3.7 )
+# list of python version, TensorFlow version and corresponding 
+# nvidia/cuda image version where each value is seperated by semicolumn (;)
 
-# list of all TensorFlow version with corresponding nvidia/cuda image version 
-# version and base image str are seperated by semicolumn (;)
-TF_BUILDS=("1.15.5;nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04" \
-           "1.14.0;nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04")
-
-
+BUILD_CFG=("py3.8;TF2.12.0;nvidia/cuda:11.8.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.11.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.10.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.9.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.8.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.7.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.6.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.5.0;nvidia/cuda:11.2.0-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.4.0;nvidia/cuda:11.0.3-cudnn8-devel-ubuntu18.04" \
+           "py3.8;TF2.3.0;nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04" \
+           "py3.8;TF2.2.0;nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04" \
+           "py3.7;TF2.2.0;nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04" \
+           "py3.7;TF2.1.0;nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04" \
+           "py3.7;TF2.0.0;nvidia/cuda:10.1-cudnn7-devel-ubuntu18.04" \
+           "py3.7;TF1.15.5;nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04" \
+           "py3.7;TF1.14.0;nvidia/cuda:10.0-cudnn7-devel-ubuntu18.04")
 
 for i in "$@"
 do
@@ -68,57 +91,50 @@ case $i in
 esac
 done
 
-CURR_DIR=$(dirname "$(realpath "$0")")
-if [ -f "$CURR_DIR/../docker/data.tar.gz" ]; then
-  rm "$CURR_DIR/../docker/data.tar.gz"
-fi
-tar -czvf "$(realpath "$CURR_DIR/../docker/data.tar.gz")" --exclude='build*' --exclude='.git' -C "$(realpath "$CURR_DIR/../../../")" .
-
 echo "Settings:"
 echo "  DAU_VERSION=${DAU_VERSION}"
 echo "  DOCKER_IMG_NAME=${DOCKER_IMG_NAME}"
-echo "  PYTHON_BUILDS=${PYTHON_BUILDS[*]}"
-echo "  TF_BUILDS=${TF_BUILDS[*]}"
+echo "  BUILD_CFG=${BUILD_CFG[*]}"
 echo "  UNITTEST_DOCKER=${UNITTEST_DOCKER}"
 
 echo "Building docker images for:"
-for TF_VER_BUILD_STR in "${TF_BUILDS[@]}"
+for BUILD_CFG_STR in "${BUILD_CFG[@]}"
 do
-  IFS=";" read -r -a TF_VER_BUILD <<< "${TF_VER_BUILD_STR}"
-  TF_VER=${TF_VER_BUILD[0]}
-  TF_BASE_IMAGE=${TF_VER_BUILD[1]}
-  for PY_VER in "${PYTHON_BUILDS[@]}"
-  do
-    DOCKER_IMG_TAG=${DAU_VERSION}-py${PY_VER}-tf${TF_VER}
+  IFS=";" read -r -a SINGLE_BUILD_CFG <<< "${BUILD_CFG_STR}"
+  PY_VER=${SINGLE_BUILD_CFG[0]:2}
+  TF_VER=${SINGLE_BUILD_CFG[1]:2}
+  TF_BASE_IMAGE=${SINGLE_BUILD_CFG[2]}
+  DOCKER_IMG_TAG=${DAU_VERSION}-py${PY_VER}-tf${TF_VER}
 
-    echo -n "  ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} ... "
+  ##############################################################################
+  echo -n "  ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} ... "
 
-    BUILD_LOG="build_dau_${DOCKER_IMG_TAG}.log"
-    PY_VER_MAJOR=${PY_VER%.*}
-    if [ ${PY_VER_MAJOR} -eq 2 ]; then
-       PY_VER_MAJOR=""
-    fi
+  BUILD_LOG="build_dau_${DOCKER_IMG_TAG}.log"
+  PY_VER_MAJOR=${PY_VER%.*}
+  if [ ${PY_VER_MAJOR} -eq 2 ]; then
+      PY_VER_MAJOR=""
+  fi
 
-    DAU_CMAKE_FLAGS="-DPACKAGE_VERSION=${DAU_VERSION}"
-    
-    DOCKERFILE_VERSION=""
-    if [[ $TF_BASE_IMAGE == *"ubuntu18.04"* ]]; then
-      DOCKERFILE_VERSION=".ubuntu18.04"
-    fi
+  DAU_CMAKE_FLAGS="-DPACKAGE_VERSION=${DAU_VERSION}"
+  
+  DOCKERFILE_VERSION=""
+  if [[ $TF_BASE_IMAGE == *"ubuntu18.04"* ]]; then
+    DOCKERFILE_VERSION=".ubuntu18.04"
+  fi
 
-    ${DOCKER_EXEC} build -t ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
-			--build-arg BASE_CUDA_VERSION=${TF_BASE_IMAGE} \
-			--build-arg TF_VER=${TF_VER} \
-			--build-arg PY_VER=${PY_VER} \
-			--build-arg PY_VER_MAJOR="${PY_VER_MAJOR}" \
-			--build-arg DAU_CMAKE_FLAGS=${DAU_CMAKE_FLAGS} -f docker/Dockerfile${DOCKERFILE_VERSION} docker/ >& ${BUILD_LOG}
-    STATUS=$?
-    if [ ${STATUS} -ne 0 ]; then
-      echo "ERROR: check ${BUILD_LOG} for logs."
-    else
-      echo "OK"
-    fi
-  done
+  ${DOCKER_EXEC} build -t ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} \
+    --build-arg BASE_CUDA_VERSION=${TF_BASE_IMAGE} \
+    --build-arg TF_VER=${TF_VER} \
+    --build-arg PY_VER=${PY_VER} \
+    --build-arg PY_VER_MAJOR="${PY_VER_MAJOR}" \
+    --build-arg DAU_CMAKE_FLAGS=${DAU_CMAKE_FLAGS} -f docker/Dockerfile${DOCKERFILE_VERSION} docker/ >& ${BUILD_LOG}
+  STATUS=$?
+  if [ ${STATUS} -ne 0 ]; then
+    echo "ERROR: check ${BUILD_LOG} for logs."
+  else
+    echo "OK"
+  fi
+  ${DOCKER_EXEC} builder prune -f --keep-storage 5GB >> ${BUILD_LOG} 2>&1
 done
 
 # Run each docker for unit-test and extract whl file
@@ -150,7 +166,7 @@ do
       if [ ${UNITTEST_DOCKER} -ne 0 ]; then
         UNITTEST_LOG="test_dau_${DOCKER_IMG_TAG}.log"
         echo -n "  Running UnitTest ... "
-        ${DOCKER_EXEC} run -i --rm --name ${CONTAINER_NAME} ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
+        ${DOCKER_EXEC} run $DOCKER_GPUS -i --rm --name ${CONTAINER_NAME} -e DEBIAN_FRONTEND=noninteractive ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /bin/bash /opt/test_dau.sh ${PYTHON_EXEC} &> ${UNITTEST_LOG}
         STATUS=$?
 
         if [ ${STATUS} -ne 0 ]; then
@@ -159,6 +175,7 @@ do
           echo "OK"
         fi
       fi
+      
 
       echo -n "  Copying .whl package to build-ci ... "
       WHL_STR="py${PY_VER_MAJOR}-none-any"
@@ -172,13 +189,15 @@ do
       if [ ! -d "$WHL_TMP_DIR" ]; then
         mkdir $WHL_TMP_DIR
       fi
-      ${DOCKER_EXEC} create --name dummy ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /bin/bash
-      ${DOCKER_EXEC} cp dummy:/opt/dau-convnet/build/plugins/tensorflow/wheelhouse/ ${WHL_TMP_DIR}/.
-      ${DOCKER_EXEC} rm -f dummy
-      WHL_TMP_DIR=$WHL_TMP_DIR/wheelhouse      
+      ${DOCKER_EXEC} rm -f dummy-${DOCKER_IMG_NAME} &> /dev/null
+      ${DOCKER_EXEC} create --name dummy-${DOCKER_IMG_NAME} ${DOCKER_IMG_NAME}:${DOCKER_IMG_TAG} /bin/bash
+      ${DOCKER_EXEC} cp dummy-${DOCKER_IMG_NAME}:/opt ${WHL_TMP_DIR}/.
+      ${DOCKER_EXEC} rm -f dummy-${DOCKER_IMG_NAME}
+
+      WHL_TMP_DIR=$WHL_TMP_DIR/opt
 
       for file in $WHL_TMP_DIR/*.whl; do
-        echo mv "$file" "${file/$WHL_STR/$WHL_REPLACEMENT_STR}"
+        mv "$file" "${file/$WHL_STR/$WHL_REPLACEMENT_STR}"
       done
       mv -f $WHL_TMP_DIR/*.whl `dirname "$0"`/.
       rm -rf $WHL_TMP_DIR
@@ -200,6 +219,6 @@ do
        fi
      fi
     fi
-  done
+  done  
 done
 
