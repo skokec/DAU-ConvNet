@@ -39,48 +39,121 @@ Pretrained models for Caffe from CVPR 2018 papers are available:
 We provide TensorFlow plugin and appropriate Python wrappers that can be used to directly replace the `tf.contrib.layers.conv2d` function. Note, our C++/CUDA code natively supports only NCHW format for input, please update your TensorFlow models to use this format. 
 
 Requirements and dependency libraries for TensorFlow plugin:
- * Python (tested on Python2.7 and Python3.5)
+ * Python (developed and tested on Python2.7 and Python3.5)
  * TensorFlow 1.6 or newer 
  * Numpy
  * OpenBlas
  * (optional) Scipy, matplotlib and python-tk  for running unit test in `dau_conv_test.py`
- 
+
+Support for TensorFlow 2 with Python 3.7 and 3.8 has been added in the latest release (see prebuild binaries below).  
+
 ## Instalation from pre-compiled binaries (pip)
 
-If you are using `TensorFlow` from pip, then install a pre-compiled binaries (.whl) from the [RELEASE](https://github.com/skokec/DAU-ConvNet/releases) page (mirror server also available http://box.vicos.si/skokec/dau-convnet):
+If you are using `TensorFlow` from pip, then install a pre-compiled binaries (.whl) from the [RELEASE](https://github.com/skokec/DAU-ConvNet/releases):
 
 ```bash
 # install dependency library (OpenBLAS)
 sudo apt-get install libopenblas-dev  wget
 
-# install dau-conv package
+# install dau-conv package for TensorFlow v2 with Python 3.8
+export TF_VERSION=2.12.0
+sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0-TF2/dau_conv-1.0_TF[TF_VERSION]-cp38-cp38m-manylinux1_x86_64.whl
+
+# install dau-conv package for TensorFlow v1 with Python 2.7 or 3.5
 export TF_VERSION=1.13.1
 sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl
+
 ```
 
-Note that pip packages were compiled against the specific version of TensorFlow from pip, which must be installed beforhand.
+Note that pip packages were compiled against the specific version of TensorFlow from pip that will be installed as dependency.
+
+Pre-compiled binaries are available for the following configurations:
+ * TensorFlow >=1.5 and <=1.13.1:
+    * Python 2.7 and 3.5
+    * Build with Ubuntu 16.04
+ * TensorFlow >=1.14 and <=2.2.0:
+    * Python 3.7
+    * Build with Ubuntu 18.04
+ * TensorFlow >=2.2.0 and <=2.12.0:
+    * Python 3.8
+    * Build with Ubuntu 18.04
 
 ## Docker 
 
-Pre-compiled docker images for TensorFlow are also available on [Docker Hub](https://hub.docker.com/r/skokec/dau-convnet) that are build using the [`plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile). 
+Pre-compiled docker images for TensorFlow are also available on [Docker Hub](https://hub.docker.com/r/skokec/dau-convnet) that are build using the [`plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile) for TensorFlow >=1.5 and <=1.13.1, and using [`plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) for TensorFlow >=1.14 and <=2.12.0
 
 Dockers are build for specific python and TensorFlow version. Start docker, for instance, for Python3.5 and TensorFlow r1.13.1, using:
 
 ```bash
 sudo nvidia-docker run -i -d -t skokec/tf-dau-convnet:1.0-py3.5-tf1.13.1 /bin/bash
 ```
+## Build and installation (TensorFlow v2) ##
 
-## Build and installation ##
+For TensorFlow >=1.14 and <=2.12.0
+ * Ubuntu 18.04 
+ * C++17 for TensorFlow 2.10.0 or higher
+ * C++14 for TensorFlow 2.7.0 or higher
+ * C++11 for TensorFlow 1.14.0 or higher
+ * CMake 3.21 or newer for (tested on version 3.21)
+ * CUDA SDK Toolkit (tested on version 10.0, 10.1, 11.0.3, 11.2.0, 11.8.0  )
+ * BLAS (ATLAS or OpenBLAS)
+ * cuBlas
 
-Requirements and dependency libraries to compile DAU-ConvNet:
- * Ubuntu 16.04 (not tested on other OS and other versions)
+Use docker script `plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) as a reference for building the plugin from source. An example of building for Python 3.8 and TensorFlow 2.12 on Ubuntu 18.04 with pre-installed CUDA and cuBLAS (using `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu18.04` docker image):
+
+```bash
+apt-get update
+
+# install build tools
+apt-get install software-properties-common build-essential cmake libcurl3-dev libfreetype6-dev libpng-dev \
+                libzmq3-dev pkg-config software-properties-common zlib1g-dev wget
+
+# install dependency library (python, OpenBLAS)
+apt-get install python3.8  python3.8-dev python3.8-pip libopenblas-dev
+
+# install pip dependencies 
+python3.8 -m pip install setuptools==57.5.0
+python3.8 -m pip install cython numpy==1.19.5 pathlib protobuf==3.20
+python3.8 -m pip install pip --upgrade
+python3.8 -m pip install tensorflow==2.12
+
+# install latest cmake (newer CUDA version do not work with default cmake in Ubuntu 18.04)
+wget -q https://cmake.org/files/v3.21/cmake-3.21.3-linux-x86_64.tar.gz -O - | tar -xz -C /opt && mv /opt/cmake-3.21.3-linux-x86_64 /opt/cmake-3.21.3
+export PATH=/opt/cmake-3.21.3/bin:$PATH
+
+```
+
+Then clone the repository and build from source:
+```bash
+git clone https://github.com/skokec/DAU-ConvNet
+git submodule update --init --recursive
+
+mkdir DAU-ConvNet/build
+cd DAU-ConvNet/build
+
+cmake -DBLAS=Open -DBUILD_TENSORFLOW_PLUGIN=on -DPYTHON_EXECUTABLE="/usr/bin/python3.8"..
+
+make -j # creates whl file in build/plugin/tensorflow/wheelhouse
+make install # will install whl package (with .so files) into python dist-packages folder 
+```
+
+Verify that install has been successful by importing dau_conv package:
+```bash
+python3.8 -c "import dau_conv"
+```
+
+## Build and installation (TensorFlow v1) ##
+
+For TensorFlow >=1.5 and <=1.13.1, rquirements and dependency libraries to compile DAU-ConvNet are:
+ * Ubuntu 16.04 
  * C++11
- * CMake 2.8 or newer (tested on version 3.5)
+ * CMake 2.8 or newer for (tested on version 3.5)
  * CUDA SDK Toolkit (tested on version 8.0 and 9.0)
  * BLAS (ATLAS or OpenBLAS)
  * cuBlas
 
-On Ubuntu 16.04 with pre-installed CUDA and cuBLAS (e.g. using nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04 or nvidia/cuda:8.0-cudnn5-devel-ubuntu16.04 docker) install dependencies first:
+
+Use docker script `plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile) as a reference for building the plugin from source. On Ubuntu 16.04 with pre-installed CUDA and cuBLAS (e.g. using nvidia/cuda:9.0-cudnn7-devel-ubuntu16.04 or nvidia/cuda:8.0-cudnn5-devel-ubuntu16.04 docker) install dependencies first:
 
 ```bash
 apt-get update
@@ -111,8 +184,12 @@ To validate installation using unit tests also install scipy, matplotlib and pyt
 
 ```bash
 apt-get install python-tk                
-                
-pip install scipy matplotlib
+
+# for Python 3.7 or 3.5
+pip install scipy matplotlib==2.2.5
+
+# for Python 3.8 or 3.7 
+pip install scipy matplotlib==3.2.0
 
 python -m dau_conv.test DAUConvTest.test_DAUConv
 ```
@@ -127,9 +204,13 @@ Please make sure that your TensorFlow is compiled against GPU/CUDA. In pip the `
 
 There are two available methods to use our DAU convolution. Using `dau_conv.DAUConv2d` class based on `base.Layer` or using wrapper `dau_conv.dau_conv2d` functions. See below for example on using `dau_conv2d` method.  
 
+NOTE: The `dau_conv.dau_conv2d` class supported only in TensorFlow v1 due to depricated contrib package in TensorFlow v2. Use DAUConv2d class instead in TensorFlow v2.
 
 Method `dau_conv.dau_conv2d`: 
 ```python
+# 
+# Supprted only for TensorFlow v1
+from dau_conv import dau_conv2d
 dau_conv2d(inputs,
              filters, # number of output filters
              dau_units, # number of DAU units per image axis, e.g, (2,2) for 4 DAUs per filter 
@@ -159,7 +240,8 @@ dau_conv2d(inputs,
 
 Class `dau_conv.DAUConv2d`: 
 ```python
-
+# Supprted for TensorFlow v1 and v2
+from dau_conv import DAUConv2d
 DAUConv2d(filters, # number of output filters
            dau_units, # number of DAU units per image axis, e.g, (2,2) for 4 DAUs total per one filter
            max_kernel_size, # maximal possible size of kernel that limits the offset of DAUs (highest value that can be used=17)
@@ -229,7 +311,7 @@ Current implementation is limited to using only the following settings:
    * `max_kernel_size <= 33` and `max_kernel_size <= 65`: less optimal  implementation that have additional computational penalty due to larger memory utilization
    * NOTE: selection of which CUDA kernel is used is performed based on actual offset values at each call so even setting large kernel sizes can be fast if all offset values (in each layer) are smaller than 8 pixels.
 
-### Example of code usage ###
+### Example of code usage for TensorFlow v1 ###
 
 CIFAR-10 example is available [here](https://github.com/skokec/DAU-ConvNet-cifar10-example).
 
