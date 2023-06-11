@@ -80,7 +80,9 @@ Pre-compiled binaries are available for the following configurations:
 
 ## Docker 
 
-Pre-compiled docker images for TensorFlow are also available on [Docker Hub](https://hub.docker.com/r/skokec/dau-convnet) that are build using the [`plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile) for TensorFlow >=1.5 and <=1.13.1, and using [`plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) for TensorFlow >=1.14 and <=2.12.0
+Pre-compiled docker images for TensorFlow are also available on [Docker Hub](https://hub.docker.com/r/skokec/dau-convnet) that are build using the 
+ * [`plugins/tensorflow/docker/Dockerfile`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile) for TensorFlow >=1.5 and <=1.13.1
+ * [`plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) for TensorFlow >=1.14 and <=2.12.0
 
 Dockers are build for specific python and TensorFlow version. Start docker, for instance, for Python3.5 and TensorFlow r1.13.1, using:
 
@@ -99,7 +101,7 @@ For TensorFlow >=1.14 and <=2.12.0
  * BLAS (ATLAS or OpenBLAS)
  * cuBlas
 
-Use docker script `plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) as a reference for building the plugin from source. An example of building for Python 3.8 and TensorFlow 2.12 on Ubuntu 18.04 with pre-installed CUDA and cuBLAS (using `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu18.04` docker image):
+Use docker script [`plugins/tensorflow/docker/Dockerfile.ubuntu18.04`](https://github.com/skokec/DAU-ConvNet/blob/master/plugins/tensorflow/docker/Dockerfile.ubuntu18.04) as a reference for building the plugin from source. An example of building for Python 3.8 and TensorFlow 2.12 on Ubuntu 18.04 with pre-installed CUDA and cuBLAS (using `nvidia/cuda:11.8.0-cudnn8-devel-ubuntu18.04` docker image):
 
 ```bash
 apt-get update
