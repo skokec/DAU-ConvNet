@@ -57,11 +57,11 @@ sudo apt-get install libopenblas-dev  wget
 
 # install dau-conv package for TensorFlow v2 with Python 3.8
 export TF_VERSION=2.12.0
-sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0-TF2/dau_conv-1.0_TF[TF_VERSION]-cp38-cp38m-manylinux1_x86_64.whl
+sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0-TF2/dau_conv-1.0_TF[TF_VERSION]-cp38-cp38-manylinux1_x86_64.whl
 
 # install dau-conv package for TensorFlow v1 with Python 2.7 or 3.5
 export TF_VERSION=1.13.1
-sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35m-manylinux1_x86_64.whl
+sudo pip install https://github.com/skokec/DAU-ConvNet/releases/download/v1.0/dau_conv-1.0_TF[TF_VERSION]-cp35-cp35-manylinux1_x86_64.whl
 
 ```
 

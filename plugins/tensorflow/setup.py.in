@@ -8,5 +8,5 @@ setup(name='dau_conv',
       author_email="domen.tabernik@fri.uni-lj.si",
       include_package_data=True,
       install_requires=["${TENSORFLOW_PIP_PACKAGE_NAME}"],
-      packages=['${DAU_CONV_MODULE_NAME}'])
+      packages=['${DAU_CONV_MODULE_NAME}', '${DAU_CONV_MODULE_NAME}.test'])
 
